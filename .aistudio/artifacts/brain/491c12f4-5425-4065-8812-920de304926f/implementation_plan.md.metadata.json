@@ -1,0 +1,6 @@
+{
+  "summary": "Plan de implementación para el sistema de autenticación de jugadores y Dungeon Masters con preaprobación de administrador, propiedad estricta de fichas de personaje y espacio del DM, respaldo rotativo automático de dos sesiones en servidor, protección de mesas con nombre y contraseña de campaña, y detección de presencia en vivo con cuatro estados de actividad (Activo, Pensando y AFK).",
+  "updatedAt": "2026-10-15T19:13:53.763429390Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
