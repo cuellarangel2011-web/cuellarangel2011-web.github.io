@@ -337,7 +337,7 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
                   onChange={(e) => setAiModel(e.target.value)}
                   className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs font-mono cursor-pointer"
                 >
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado: Ultrarrápido y preciso)</option>
+                  <option value="gemini-flash-lite-latest">gemini-flash-lite-latest (Recomendado: Ultrarrápido y preciso)</option>
                   <option value="gemini-2.5-pro">Gemini 2.5 Pro (Razonamiento profundo para tramas)</option>
                   <option value="gemini-1.5-flash">Gemini 1.5 Flash (Compatible y ligero)</option>
                 </select>
