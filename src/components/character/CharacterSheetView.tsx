@@ -23,6 +23,7 @@ import {
   Upload,
   ArrowLeft,
   Cloud,
+  Coins,
 } from 'lucide-react';
 import {
   Character5e,
@@ -31,6 +32,7 @@ import {
   AttackAction,
   InventoryItem,
   SpellItem,
+  Currency,
 } from '../../types/dnd';
 import {
   calculateModifier,
@@ -109,6 +111,60 @@ export const CharacterSheetView: React.FC<CharacterSheetViewProps> = ({
     description: '',
     prepared: true,
   });
+
+  // Currency Modal & State
+  const [showCurrencyModal, setShowCurrencyModal] = useState<boolean>(false);
+  const [currencyForm, setCurrencyForm] = useState<Currency>({
+    gp: 0,
+    sp: 0,
+    cp: 0,
+    ep: 0,
+    pp: 0,
+  });
+  const [quickDelta, setQuickDelta] = useState<number>(10);
+  const [quickCoin, setQuickCoin] = useState<keyof Currency>('gp');
+
+  const handleOpenCurrencyModal = () => {
+    if (isLocked) {
+      if (onUnlockRequest) onUnlockRequest();
+      return;
+    }
+    const curr = character.currency || { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+    setCurrencyForm({
+      cp: curr.cp ?? 0,
+      sp: curr.sp ?? 0,
+      ep: curr.ep ?? 0,
+      gp: curr.gp ?? 0,
+      pp: curr.pp ?? 0,
+    });
+    setShowCurrencyModal(true);
+  };
+
+  const handleSaveCurrency = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (isLocked) {
+      if (onUnlockRequest) onUnlockRequest();
+      return;
+    }
+    onUpdateCharacter({
+      ...character,
+      currency: {
+        cp: Math.max(0, Math.floor(Number(currencyForm.cp) || 0)),
+        sp: Math.max(0, Math.floor(Number(currencyForm.sp) || 0)),
+        ep: Math.max(0, Math.floor(Number(currencyForm.ep) || 0)),
+        gp: Math.max(0, Math.floor(Number(currencyForm.gp) || 0)),
+        pp: Math.max(0, Math.floor(Number(currencyForm.pp) || 0)),
+      },
+    });
+    setShowCurrencyModal(false);
+  };
+
+  const adjustQuickCurrency = (coin: keyof Currency, delta: number) => {
+    setCurrencyForm((prev) => ({
+      ...prev,
+      [coin]: Math.max(0, (Number(prev[coin]) || 0) + delta),
+    }));
+  };
 
   const profBonus = calculateProficiencyBonus(character.level);
   const passivePerception = calculatePassivePerception(
@@ -1219,26 +1275,61 @@ export const CharacterSheetView: React.FC<CharacterSheetViewProps> = ({
       {/* TAB 4: Inventory & Currency */}
       {activeTab === 'inventory' && (
         <div className="space-y-4">
-          <div className="bg-[#181920] border border-amber-900/40 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="font-cinzel font-bold text-amber-300 text-sm flex items-center gap-1.5">
-              <Award className="w-4 h-4 text-amber-400" />
-              Bolsa de Monedas
-            </div>
-            <div className="flex items-center gap-3">
-              {[
-                { key: 'gp', label: 'PO (Oro)', color: 'text-amber-300' },
-                { key: 'sp', label: 'PP (Plata)', color: 'text-stone-300' },
-                { key: 'cp', label: 'PC (Cobre)', color: 'text-orange-400' },
-                { key: 'ep', label: 'PE (Electro)', color: 'text-yellow-600' },
-                { key: 'pp', label: 'PL (Platino)', color: 'text-cyan-300' },
-              ].map((coin) => (
-                <div key={coin.key} className="flex items-center gap-1.5 bg-[#121316] px-2.5 py-1 rounded border border-stone-800">
-                  <span className={`font-bold font-mono text-xs ${coin.color}`}>
-                    {character.currency[coin.key as keyof typeof character.currency]}
-                  </span>
-                  <span className="text-[10px] text-stone-500 uppercase">{coin.key}</span>
+          <div className="bg-[#181920] border border-amber-900/40 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-950/80 border border-amber-600/60 flex items-center justify-center text-amber-300 shadow">
+                <Coins className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <div className="font-cinzel font-bold text-amber-300 text-sm flex items-center gap-1.5">
+                  Bolsa de Monedas & Tesoro
                 </div>
-              ))}
+                <div className="text-[10px] text-stone-400 font-sans">
+                  Total aprox: ~{(
+                    ((character.currency?.pp || 0) * 10) +
+                    (character.currency?.gp || 0) +
+                    ((character.currency?.ep || 0) * 0.5) +
+                    ((character.currency?.sp || 0) * 0.1) +
+                    ((character.currency?.cp || 0) * 0.01)
+                  ).toFixed(2)} PO en valor
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                {[
+                  { key: 'gp', name: 'Oro', label: 'PO', color: 'text-amber-300', border: 'hover:border-amber-500/80' },
+                  { key: 'sp', name: 'Plata', label: 'PP', color: 'text-stone-300', border: 'hover:border-stone-400/80' },
+                  { key: 'cp', name: 'Cobre', label: 'PC', color: 'text-orange-400', border: 'hover:border-orange-500/80' },
+                  { key: 'ep', name: 'Electro', label: 'PE', color: 'text-yellow-600', border: 'hover:border-yellow-600/80' },
+                  { key: 'pp', name: 'Platino', label: 'PL', color: 'text-cyan-300', border: 'hover:border-cyan-400/80' },
+                ].map((coin) => (
+                  <button
+                    key={coin.key}
+                    type="button"
+                    onClick={handleOpenCurrencyModal}
+                    title={`Editar monedas de ${coin.name}. Haz clic para abrir la bolsa.`}
+                    className={`flex items-center gap-1.5 bg-[#121316] hover:bg-stone-800/80 px-2.5 py-1.5 rounded-lg border border-stone-800 transition ${coin.border} cursor-pointer group`}
+                  >
+                    <span className={`font-bold font-mono text-xs sm:text-sm ${coin.color}`}>
+                      {(character.currency?.[coin.key as keyof typeof character.currency] ?? 0).toLocaleString()}
+                    </span>
+                    <span className="text-[10px] text-stone-500 group-hover:text-stone-300 uppercase font-mono font-bold">
+                      {coin.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleOpenCurrencyModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-cinzel font-bold text-xs shadow-md transition cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Editar Bolsa</span>
+              </button>
             </div>
           </div>
 
@@ -1580,6 +1671,235 @@ export const CharacterSheetView: React.FC<CharacterSheetViewProps> = ({
                 Confirmar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Currency Adjustment Modal */}
+      {showCurrencyModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-lg bg-[#181920] border-2 border-amber-900/80 rounded-3xl p-6 sm:p-7 text-stone-200 shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-stone-800 pb-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-950 border border-amber-500/80 flex items-center justify-center text-amber-200 shadow-md">
+                  <Coins className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel font-bold text-lg text-amber-300">
+                    Bolsa de Monedas y Tesoro
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    Ajusta o escribe la cantidad de monedas que porta {character.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCurrencyModal(false)}
+                className="p-1.5 rounded-xl text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCurrency} className="flex-1 overflow-y-auto space-y-5 pr-1">
+              {/* Total Worth Summary */}
+              <div className="bg-gradient-to-r from-amber-950/50 via-stone-900 to-amber-950/50 border border-amber-900/50 rounded-2xl p-3.5 flex items-center justify-between">
+                <span className="text-xs font-cinzel font-semibold text-stone-300">
+                  Valor Estimado Total:
+                </span>
+                <span className="font-mono font-bold text-amber-300 text-sm">
+                  ~{(
+                    ((Number(currencyForm.pp) || 0) * 10) +
+                    (Number(currencyForm.gp) || 0) +
+                    ((Number(currencyForm.ep) || 0) * 0.5) +
+                    ((Number(currencyForm.sp) || 0) * 0.1) +
+                    ((Number(currencyForm.cp) || 0) * 0.01)
+                  ).toFixed(2)} Piezas de Oro (PO)
+                </span>
+              </div>
+
+              {/* Coins Input Grid */}
+              <div className="space-y-3">
+                {[
+                  {
+                    key: 'gp' as const,
+                    name: 'Piezas de Oro (PO)',
+                    abbr: 'PO / GP',
+                    color: 'text-amber-300',
+                    border: 'border-amber-600/60 focus-within:border-amber-400',
+                    btnBg: 'hover:bg-amber-900/60 text-amber-300',
+                    desc: 'Moneda estándar de comercio (1 PO = 10 PP = 100 PC)',
+                  },
+                  {
+                    key: 'sp' as const,
+                    name: 'Piezas de Plata (PP)',
+                    abbr: 'PP / SP',
+                    color: 'text-stone-300',
+                    border: 'border-stone-600/60 focus-within:border-stone-300',
+                    btnBg: 'hover:bg-stone-800 text-stone-300',
+                    desc: 'Usada para gastos cotidianos (10 PP = 1 PO)',
+                  },
+                  {
+                    key: 'cp' as const,
+                    name: 'Piezas de Cobre (PC)',
+                    abbr: 'PC / CP',
+                    color: 'text-orange-400',
+                    border: 'border-orange-600/60 focus-within:border-orange-400',
+                    btnBg: 'hover:bg-orange-950/60 text-orange-400',
+                    desc: 'Monedas de menor denominación (100 PC = 1 PO)',
+                  },
+                  {
+                    key: 'ep' as const,
+                    name: 'Piezas de Electro (PE)',
+                    abbr: 'PE / EP',
+                    color: 'text-yellow-600',
+                    border: 'border-yellow-700/60 focus-within:border-yellow-500',
+                    btnBg: 'hover:bg-yellow-950/60 text-yellow-500',
+                    desc: 'Aleación antigua (1 PE = 0.5 PO = 5 PP)',
+                  },
+                  {
+                    key: 'pp' as const,
+                    name: 'Piezas de Platino (PL)',
+                    abbr: 'PL / PP',
+                    color: 'text-cyan-300',
+                    border: 'border-cyan-600/60 focus-within:border-cyan-400',
+                    btnBg: 'hover:bg-cyan-950/60 text-cyan-300',
+                    desc: 'Moneda de alto valor (1 PL = 10 PO)',
+                  },
+                ].map((c) => (
+                  <div
+                    key={c.key}
+                    className={`bg-[#121316] border ${c.border} rounded-2xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 transition`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`font-cinzel font-bold text-xs ${c.color}`}>
+                          {c.name}
+                        </span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-900 border border-stone-800 text-stone-400 font-semibold">
+                          {c.abbr}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-stone-500 mt-0.5">{c.desc}</p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 self-end sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => adjustQuickCurrency(c.key, -10)}
+                        className={`w-7 h-7 rounded-lg bg-stone-900 border border-stone-800 font-mono text-xs font-bold transition flex items-center justify-center ${c.btnBg}`}
+                        title="Restar 10"
+                      >
+                        -10
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => adjustQuickCurrency(c.key, -1)}
+                        className={`w-7 h-7 rounded-lg bg-stone-900 border border-stone-800 font-mono text-xs font-bold transition flex items-center justify-center ${c.btnBg}`}
+                        title="Restar 1"
+                      >
+                        -1
+                      </button>
+
+                      <input
+                        type="number"
+                        min="0"
+                        value={currencyForm[c.key]}
+                        onChange={(e) => {
+                          const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                          setCurrencyForm((prev) => ({ ...prev, [c.key]: val }));
+                        }}
+                        className={`w-20 bg-stone-900/90 border border-stone-700 rounded-lg px-2 py-1 text-center font-mono font-bold text-sm outline-none ${c.color}`}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => adjustQuickCurrency(c.key, 1)}
+                        className={`w-7 h-7 rounded-lg bg-stone-900 border border-stone-800 font-mono text-xs font-bold transition flex items-center justify-center ${c.btnBg}`}
+                        title="Sumar 1"
+                      >
+                        +1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => adjustQuickCurrency(c.key, 10)}
+                        className={`w-7 h-7 rounded-lg bg-stone-900 border border-stone-800 font-mono text-xs font-bold transition flex items-center justify-center ${c.btnBg}`}
+                        title="Sumar 10"
+                      >
+                        +10
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Botones de acción rápida de botín */}
+              <div className="bg-[#121316] border border-stone-800 rounded-2xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-cinzel font-bold text-stone-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    Ajuste Rápido de Botín / Compra
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {(['gp', 'sp', 'cp', 'pp'] as const).map((coin) => (
+                      <button
+                        key={coin}
+                        type="button"
+                        onClick={() => setQuickCoin(coin)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase transition ${
+                          quickCoin === coin
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+                        }`}
+                      >
+                        {coin}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
+                  {[-100, -50, -25, -5, +5, +25, +50, +100].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => adjustQuickCurrency(quickCoin, amt)}
+                      className={`py-1 rounded-lg text-[11px] font-mono font-bold transition border ${
+                        amt > 0
+                          ? 'bg-emerald-950/60 border-emerald-800/70 text-emerald-300 hover:bg-emerald-900'
+                          : 'bg-red-950/60 border-red-800/70 text-red-300 hover:bg-red-900'
+                      }`}
+                    >
+                      {amt > 0 ? `+${amt}` : amt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="pt-2 border-t border-stone-800 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCurrencyModal(false)}
+                  className="px-4 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-cinzel text-xs transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Guardar Monedas
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
