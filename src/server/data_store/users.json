@@ -21,7 +21,8 @@
     "registeredAt": 1792151610888,
     "lastActiveAt": 1792162370497,
     "approvedAt": 1792152126641,
-    "approvedBy": "Admin"
+    "approvedBy": "Admin",
+    "passwordResetRequested": false
   },
   {
     "email": "test_both@weroll.app",

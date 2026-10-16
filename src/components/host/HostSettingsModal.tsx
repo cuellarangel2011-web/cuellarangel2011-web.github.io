@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Settings,
@@ -24,6 +24,13 @@ import {
   UserCheck,
   UserX,
   RefreshCw,
+  Flame,
+  Crown,
+  Skull,
+  Wand2,
+  Castle,
+  Upload,
+  Dices,
 } from 'lucide-react';
 import { HostSettings, ChangelogEntry, UserAccountPublic } from '../../types/dnd';
 
@@ -48,6 +55,27 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
     settings.headerSubtitle || 'Companion & DM Suite v0.1'
   );
   const [headerLogoIcon, setHeaderLogoIcon] = useState<string>(settings.headerLogoIcon || 'shield');
+  const [logoType, setLogoType] = useState<'icon' | 'custom'>(settings.logoType || 'icon');
+  const [customLogoUrl, setCustomLogoUrl] = useState<string | undefined>(settings.customLogoUrl);
+  const logoFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor selecciona un archivo de imagen válido (JPG, PNG, WebP, GIF, SVG).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const dataUrl = evt.target?.result as string;
+      setCustomLogoUrl(dataUrl);
+      setLogoType('custom');
+    };
+    reader.readAsDataURL(file);
+  };
 
   // AI & Models
   const [apiKey, setApiKey] = useState<string>(settings.apiKeyOverride || '');
@@ -218,6 +246,9 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
       headerTitle: headerTitle.trim() || 'WeRoll',
       headerSubtitle: headerSubtitle.trim() || 'Companion & DM Suite v0.1',
       headerLogoIcon,
+      logoIcon: headerLogoIcon,
+      logoType,
+      customLogoUrl,
       apiKeyOverride: apiKey.trim(),
       aiModel,
       oracleWelcomeMessage: oracleWelcome.trim(),
@@ -609,35 +640,128 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
                 />
               </div>
 
-              <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <label className="block text-xs font-cinzel font-bold text-amber-400 mb-2">
-                  Icono del Logo
+              <div className="bg-[#121316] border border-stone-800 rounded-xl p-4 space-y-3">
+                <label className="block text-xs font-cinzel font-bold text-amber-400">
+                  Personalización del Logo de WeRoll
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    { id: 'shield', label: 'Escudo', icon: Shield },
-                    { id: 'sword', label: 'Espada', icon: Sword },
-                    { id: 'book', label: 'Grimorio', icon: BookOpen },
-                    { id: 'sparkles', label: 'Magia', icon: Sparkles },
-                  ].map((item) => {
-                    const IconCmp = item.icon;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setHeaderLogoIcon(item.id)}
-                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs transition ${
-                          headerLogoIcon === item.id
-                            ? 'bg-amber-600/30 border-amber-500 text-amber-300 font-bold'
-                            : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
-                        }`}
-                      >
-                        <IconCmp className="w-5 h-5" />
-                        <span>{item.label}</span>
-                      </button>
-                    );
-                  })}
+                
+                {/* Mode Selector */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setLogoType('icon')}
+                    className={`p-2.5 rounded-xl border text-xs font-cinzel font-bold transition flex items-center justify-center gap-2 ${
+                      logoType === 'icon'
+                        ? 'bg-amber-600/30 border-amber-500 text-amber-300'
+                        : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                    }`}
+                  >
+                    <Shield className="w-4 h-4" />
+                    <span>Iconos Prefabricados</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLogoType('custom');
+                      if (!customLogoUrl) logoFileInputRef.current?.click();
+                    }}
+                    className={`p-2.5 rounded-xl border text-xs font-cinzel font-bold transition flex items-center justify-center gap-2 ${
+                      logoType === 'custom'
+                        ? 'bg-purple-600/30 border-purple-500 text-purple-300'
+                        : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                    }`}
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Subir JPG / PNG</span>
+                  </button>
                 </div>
+
+                <input
+                  type="file"
+                  ref={logoFileInputRef}
+                  onChange={handleLogoFileUpload}
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="hidden"
+                />
+
+                {logoType === 'icon' ? (
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 pt-2">
+                    {[
+                      { id: 'shield', label: 'Escudo', icon: Shield },
+                      { id: 'dragon', label: 'Dragón', icon: Flame },
+                      { id: 'swords', label: 'Espadas', icon: Sword },
+                      { id: 'skull', label: 'Calavera', icon: Skull },
+                      { id: 'book', label: 'Grimorio', icon: BookOpen },
+                      { id: 'crown', label: 'Corona', icon: Crown },
+                      { id: 'd20', label: 'Dado D20', icon: Dices },
+                      { id: 'wand', label: 'Varita', icon: Wand2 },
+                      { id: 'castle', label: 'Castillo', icon: Castle },
+                      { id: 'sparkles', label: 'Magia', icon: Sparkles },
+                    ].map((item) => {
+                      const IconCmp = item.icon;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setHeaderLogoIcon(item.id);
+                            setLogoType('icon');
+                          }}
+                          className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border text-[11px] transition ${
+                            headerLogoIcon === item.id && logoType === 'icon'
+                              ? 'bg-amber-600/30 border-amber-500 text-amber-300 font-bold'
+                              : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                          }`}
+                        >
+                          <IconCmp className="w-4 h-4" />
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="space-y-3 pt-2 bg-[#181920] border border-stone-800 rounded-xl p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-stone-300">Cargar tu propia imagen:</span>
+                      <button
+                        type="button"
+                        onClick={() => logoFileInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-600 text-white font-cinzel font-bold text-xs flex items-center gap-1.5"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>{customLogoUrl ? 'Cambiar Imagen' : 'Seleccionar Archivo'}</span>
+                      </button>
+                    </div>
+
+                    {customLogoUrl ? (
+                      <div className="flex items-center justify-between p-2 bg-[#121316] border border-stone-800 rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={customLogoUrl}
+                            alt="Custom Logo"
+                            className="w-10 h-10 rounded-lg object-cover border border-purple-500"
+                          />
+                          <span className="text-xs text-purple-300 font-cinzel font-bold">Imagen Personalizada Cargada</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomLogoUrl(undefined);
+                            setLogoType('icon');
+                          }}
+                          className="px-2.5 py-1 rounded bg-stone-800 hover:bg-red-950 hover:text-red-300 text-stone-400 text-xs border border-stone-700"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-stone-500 italic">
+                        No se ha seleccionado ninguna imagen aún. Haz clic en "Seleccionar Archivo" para subir tu JPG o PNG.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}

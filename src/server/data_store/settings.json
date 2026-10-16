@@ -1,7 +1,7 @@
 {
-  "headerTitle": "WeRoll",
-  "headerSubtitle": "Companion & DM Suite v0.4",
-  "headerLogoIcon": "shield",
+  "headerTitle": "WeRoll 5E",
+  "headerSubtitle": "Suite v0.5 ALFA",
+  "headerLogoIcon": "dragon",
   "aiModel": "gemini-flash-lite-latest",
   "moderatorPassword": "admin",
   "dmPassword": "",
@@ -16,11 +16,25 @@
   },
   "developerNotice": {
     "enabled": true,
-    "title": "WeRoll • Novedades v0.4",
-    "content": "Sincronización en tiempo real de credenciales maestras, modelo IA, avisos del administrador en Lobby y bóveda persistente en la nube.",
-    "version": "0.4"
+    "title": "WeRoll • Novedades v0.5 ALFA (Lanzamiento Público)",
+    "content": "¡WeRoll se abre al público! Esperamos el feedback de toda la comunidad de aventureros. Incluye inyección manual de fichas/mundos, gestión y reseteo de contraseñas y buzón de sugerencias.",
+    "version": "0.5 ALFA"
   },
   "changelog": [
+    {
+      "version": "0.5 ALFA",
+      "date": "2026-10-16",
+      "title": "WeRoll 0.5 ALFA • Apertura Pública, Feedback Comunitario & Rescate de Fichas",
+      "changes": [
+        "¡Lanzamiento público de WeRoll! La plataforma abre sus puertas a toda la comunidad de D&D 5E. Esperamos ansiosos su feedback para pulir cada rincón de la suite.",
+        "Botón de Feedback integrado en la barra superior (junto al Oráculo IA y Manual) para enviar reportes de bugs, sugerencias y otros comentarios.",
+        "Bandeja de Sugerencias y Feedback en el Panel de Administrador para revisar y gestionar los comentarios de la comunidad.",
+        "Inyección manual de Player Sheets y World Sheets desde la Gestión de Cuentas para que los moderadores rescaten o restauren datos de cualquier usuario.",
+        "Gestión de contraseñas de usuarios en el Panel de Administrador: visualización de contraseña actual y asignación de nueva clave.",
+        "Pestaña de Seguridad en el Lobby para que los usuarios cambien su contraseña y flujo de solicitud de reseteo asistido (\"Olvidé mi contraseña\").",
+        "Bolsa interactiva de monedas en la ficha de personaje (PO, PP, PC, PE, PL) con edición directa y conversor de valor total."
+      ]
+    },
     {
       "version": "0.4",
       "date": "2026-10-16",
@@ -64,5 +78,7 @@
         "Bóveda del servidor para descargas y respaldos completos en formato JSON."
       ]
     }
-  ]
+  ],
+  "logoType": "icon",
+  "logoIcon": "dragon"
 }

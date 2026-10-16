@@ -1,1 +1,125 @@
-[]
+[
+  {
+    "id": "world-1792162381332-6k76",
+    "ownerEmail": "deadplanter@gmail.com",
+    "name": "22",
+    "roomCode": "MESA-1",
+    "roomPassword": "2",
+    "workspace": {
+      "dmPassword": "",
+      "folders": [
+        "General",
+        "Campaña"
+      ],
+      "currentQuest": "Investigar los túneles secretos bajo la Taberna del Jabalí Saltarín y recuperar el cargamento robado.",
+      "quickNotification": "",
+      "dmLiveMessage": "⚔️ ¡Aventureros en posición! Prepárense para descender a los túneles subterráneos.",
+      "favoritesSRD": [
+        "comb-1",
+        "comb-2",
+        "comb-3",
+        "comb-5"
+      ],
+      "customItemsAndSpells": [],
+      "combatSummaries": [],
+      "npcs": [],
+      "monsters": [
+        {
+          "id": "mon-1792162393679",
+          "name": "22",
+          "size": "Mediano",
+          "type": "Monstruosidad",
+          "alignment": "Caótico Maligno",
+          "cr": "1",
+          "ac": 13,
+          "hp": 25,
+          "maxHp": 25,
+          "speed": "30 pies",
+          "str": 14,
+          "dex": 12,
+          "con": 14,
+          "int": 8,
+          "wis": 10,
+          "cha": 8,
+          "traits": [],
+          "actions": [
+            {
+              "id": "atk-1792162391504",
+              "name": "Cimitarra",
+              "type": "melee",
+              "toHit": 4,
+              "damage": "1d6+2",
+              "damageType": "Cortante",
+              "range": "5 pies",
+              "description": "Ataque cuerpo a cuerpo ágil"
+            }
+          ],
+          "folder": "General",
+          "notes": ""
+        }
+      ],
+      "customItems": [
+        {
+          "id": "item-1",
+          "name": "Anillo de Protección +1",
+          "quantity": 1,
+          "weight": 0.1,
+          "category": "Mágico",
+          "rarity": "Raro",
+          "attunement": true,
+          "description": "Otorga +1 a la Clase de Armadura y +1 a todas las tiradas de salvación."
+        },
+        {
+          "id": "item-2",
+          "name": "Espada de Fuego Solar",
+          "quantity": 1,
+          "weight": 3,
+          "category": "Arma",
+          "rarity": "Muy Raro",
+          "attunement": true,
+          "description": "Emite luz brillante en 15 pies. Inflige 2d6 daño radiante adicional contra muertos vivientes."
+        }
+      ],
+      "locations": [],
+      "campaignLogs": [],
+      "activeEncounter": {
+        "id": "enc-1792162381332",
+        "name": "Combate",
+        "round": 1,
+        "currentTurnIndex": 0,
+        "combatants": [
+          {
+            "id": "c-mon-1792162395326-jivy",
+            "name": "22 #1",
+            "initiative": 18,
+            "hp": 25,
+            "maxHp": 25,
+            "ac": 13,
+            "passivePerception": 10,
+            "isPlayer": false,
+            "faction": "enemy",
+            "conditions": []
+          }
+        ],
+        "isActive": false,
+        "combatNotes": "",
+        "combatLog": [],
+        "broadcastEnemiesToTable": false
+      }
+    },
+    "updatedAt": 1792164009746
+  },
+  {
+    "id": "world-1792166270688-wqko",
+    "ownerEmail": "deadplanter@gmail.com",
+    "name": "Campaña Ojo del Dragón",
+    "roomCode": "OJO-123",
+    "workspace": {
+      "folders": [
+        "Capítulo 1",
+        "Guarida"
+      ]
+    },
+    "updatedAt": 1792166270689
+  }
+]

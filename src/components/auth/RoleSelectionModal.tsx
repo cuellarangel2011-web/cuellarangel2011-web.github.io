@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User, Shield, KeyRound, Lock, AlertCircle, Sparkles, Check, ChevronRight, Mail, UserPlus, LogIn, Clock, ArrowLeft, Crown } from 'lucide-react';
-import { UserRole } from '../../types/dnd';
+import { HostSettings, UserRole } from '../../types/dnd';
+import { BrandLogo } from '../common/BrandLogo';
 
 export interface AuthSessionUser {
   id: string;
@@ -16,6 +17,7 @@ interface RoleSelectionModalProps {
   canClose?: boolean;
   dmPasswordExpected?: string;
   moderatorPasswordExpected?: string;
+  hostSettings?: HostSettings;
   onSelectRole: (role: UserRole, user?: AuthSessionUser) => void;
 }
 
@@ -25,10 +27,11 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
   canClose = false,
   dmPasswordExpected = '',
   moderatorPasswordExpected = 'admin',
+  hostSettings,
   onSelectRole,
 }) => {
   // Default mode is directly 'login' as requested
-  const [authMode, setAuthMode] = useState<'login' | 'register' | 'adminPassword'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'adminPassword' | 'forgotPassword'>('login');
   const [selectedRole, setSelectedRole] = useState<UserRole>('moderator');
 
   // Login form state
@@ -41,6 +44,11 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
   const [regPassword, setRegPassword] = useState<string>('');
   const [regRole, setRegRole] = useState<'player' | 'dm' | 'both'>('player');
 
+  // Forgot password form state
+  const [forgotEmail, setForgotEmail] = useState<string>('');
+  const [forgotNote, setForgotNote] = useState<string>('');
+  const [forgotSuccess, setForgotSuccess] = useState<string>('');
+
   // Direct DM / Admin password
   const [enteredPassword, setEnteredPassword] = useState<string>('');
 
@@ -48,6 +56,37 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [pendingNotice, setPendingNotice] = useState<string>('');
   const [rejectedNotice, setRejectedNotice] = useState<{ message: string; customMessage?: string } | null>(null);
+
+  const handleForgotPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setForgotSuccess('');
+    if (!forgotEmail.trim()) {
+      setErrorMessage('Ingresa el correo electrónico asociado a tu cuenta.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail, note: forgotNote }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErrorMessage(data.error || 'Error al procesar la solicitud.');
+      } else {
+        setForgotSuccess(
+          data.message ||
+            'Solicitud enviada al Administrador. El administrador revisará tu cuenta y te proporcionará una nueva clave.'
+        );
+      }
+    } catch (err) {
+      setErrorMessage('Error de conexión con el servidor.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -163,9 +202,7 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
       <div className="relative w-full max-w-lg bg-[#181920] border-2 border-amber-900/80 rounded-3xl shadow-2xl p-6 sm:p-8 text-stone-200 flex flex-col max-h-[95vh] overflow-y-auto">
         {/* Header Branding */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-950 border border-amber-500 shadow-lg text-amber-200 mb-3">
-            <Shield className="w-7 h-7" />
-          </div>
+          <BrandLogo hostSettings={hostSettings} size="lg" className="mb-3 mx-auto" />
           <h2 className="font-cinzel font-black text-2xl text-amber-300 tracking-wider">
             WeRoll 5E
           </h2>
@@ -174,6 +211,8 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
               ? 'Crear Cuenta y Seleccionar Perfil'
               : authMode === 'adminPassword'
               ? 'Acceso con Clave Maestra'
+              : authMode === 'forgotPassword'
+              ? 'Recuperar / Restablecer Contraseña'
               : 'Iniciar Sesión en tu Cuenta'}
           </p>
         </div>
@@ -235,9 +274,23 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
-                Contraseña
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-cinzel font-bold uppercase text-stone-400">
+                  Contraseña
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setErrorMessage('');
+                    setForgotSuccess('');
+                    setForgotEmail(loginEmail);
+                    setAuthMode('forgotPassword');
+                  }}
+                  className="text-[11px] text-amber-400/90 hover:text-amber-300 transition underline font-sans"
+                >
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
               <div className="relative">
                 <input
                   type="password"
@@ -493,6 +546,96 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
                 Verificar & Acceder
               </button>
             </div>
+          </form>
+        )}
+
+        {/* =================================================================== */}
+        {/* 4. FORGOT PASSWORD REQUEST VIEW                                    */}
+        {/* =================================================================== */}
+        {authMode === 'forgotPassword' && (
+          <form onSubmit={handleForgotPasswordSubmit} className="space-y-4">
+            <div className="p-4 rounded-2xl bg-[#121316] border border-amber-900/50 text-xs text-stone-300 space-y-2">
+              <div className="flex items-center gap-2 font-cinzel font-bold text-amber-300">
+                <Lock className="w-4 h-4 text-amber-400" />
+                <span>Restablecimiento Asistido de Contraseña</span>
+              </div>
+              <p className="leading-relaxed">
+                Ingresa tu correo electrónico registrado. Tu solicitud quedará marcada inmediatamente en el Panel de Administración para que un moderador pueda restablecer o entregarte tu nueva clave de acceso.
+              </p>
+            </div>
+
+            {forgotSuccess ? (
+              <div className="p-4 rounded-xl bg-emerald-950/80 border border-emerald-600 text-xs text-emerald-200 space-y-2">
+                <div className="flex items-center gap-2 font-cinzel font-bold text-emerald-300">
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span>¡Solicitud Registrada con Éxito!</span>
+                </div>
+                <p className="leading-relaxed">{forgotSuccess}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForgotSuccess('');
+                    setAuthMode('login');
+                  }}
+                  className="mt-2 w-full py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-700 text-white font-cinzel font-bold text-xs transition"
+                >
+                  Volver a Iniciar Sesión
+                </button>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                    Correo Electrónico de tu Cuenta
+                  </label>
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="tu@correo.com"
+                    autoFocus
+                    required
+                    className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm outline-none transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                    Nota o Mensaje para el Administrador (Opcional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={forgotNote}
+                    onChange={(e) => setForgotNote(e.target.value)}
+                    placeholder="Ej. Olvidé mi clave, por favor restablecer a..."
+                    className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl p-3 text-stone-100 text-xs outline-none resize-none transition"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-cinzel font-bold text-sm shadow-xl transition transform hover:scale-[1.01] disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  {isLoading ? 'Enviando solicitud...' : 'Solicitar Restablecimiento al Administrador'}
+                </button>
+
+                <div className="pt-2 text-center border-t border-stone-800/80">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setErrorMessage('');
+                      setAuthMode('login');
+                    }}
+                    className="text-xs text-stone-400 hover:text-amber-300 transition flex items-center justify-center gap-1 mx-auto"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Regresar al inicio de sesión
+                  </button>
+                </div>
+              </>
+            )}
           </form>
         )}
 
