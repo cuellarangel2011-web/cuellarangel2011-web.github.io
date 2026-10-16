@@ -23,6 +23,19 @@ export interface UserAccount {
   approvedAt?: number;
   approvedBy?: string;
   lastActiveAt: number;
+  passwordResetRequested?: boolean;
+  passwordResetRequestedAt?: number;
+  passwordResetNote?: string;
+}
+
+export interface FeedbackRecord {
+  id: string;
+  category: 'bug' | 'suggestion' | 'other';
+  description: string;
+  userEmail?: string;
+  userName?: string;
+  createdAt: number;
+  status?: 'unread' | 'reviewed';
 }
 
 export interface RoomRecord {
@@ -164,6 +177,36 @@ export const dataStore = {
     return users[idx];
   },
 
+  findUserById(id: string): UserAccount | undefined {
+    const users = this.getUsers();
+    return users.find((u) => u.id === id);
+  },
+
+  updateUserPassword(id: string, newPassword: string, clearResetRequest = true): UserAccount | null {
+    const users = this.getUsers();
+    const idx = users.findIndex((u) => u.id === id);
+    if (idx === -1) return null;
+    users[idx].password = newPassword.trim();
+    if (clearResetRequest) {
+      users[idx].passwordResetRequested = false;
+      users[idx].passwordResetRequestedAt = undefined;
+      users[idx].passwordResetNote = undefined;
+    }
+    this.saveUsers(users);
+    return users[idx];
+  },
+
+  requestPasswordReset(email: string, note?: string): boolean {
+    const users = this.getUsers();
+    const idx = users.findIndex((u) => u.email.trim().toLowerCase() === email.trim().toLowerCase());
+    if (idx === -1) return false;
+    users[idx].passwordResetRequested = true;
+    users[idx].passwordResetRequestedAt = Date.now();
+    users[idx].passwordResetNote = note || 'Solicitud de restablecimiento realizada por el usuario.';
+    this.saveUsers(users);
+    return true;
+  },
+
   // --- ROOMS WITH PASSWORDS ---
   getRooms(): Record<string, RoomRecord> {
     return readJSON<Record<string, RoomRecord>>('rooms.json', {});
@@ -268,6 +311,109 @@ export const dataStore = {
     return false;
   },
 
+  // --- ADMIN SHEET & WORLD INJECTION ---
+  injectPlayerSheet(userEmail: string, character: Character5e, customName?: string): PlayerSheetRecord {
+    const sheetId = character.id || `sheet-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const record: PlayerSheetRecord = {
+      id: sheetId,
+      ownerEmail: userEmail.trim().toLowerCase(),
+      name: customName?.trim() || character.name || 'Ficha Inyectada',
+      character: {
+        ...character,
+        id: sheetId,
+      },
+      updatedAt: Date.now(),
+    };
+    this.savePlayerSheet(record);
+    return record;
+  },
+
+  injectWorldSheet(
+    userEmail: string,
+    workspace: DMWorkspace,
+    customName?: string,
+    roomCode?: string,
+    roomPassword?: string
+  ): WorldSheetRecord {
+    const worldId = `world-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const finalRoomCode = (
+      roomCode?.trim() || `MESA-${Math.floor(1000 + Math.random() * 9000)}`
+    ).toUpperCase();
+
+    const record: WorldSheetRecord = {
+      id: worldId,
+      ownerEmail: userEmail.trim().toLowerCase(),
+      name: customName?.trim() || 'Mundo Inyectado',
+      roomCode: finalRoomCode,
+      roomPassword: roomPassword?.trim() || undefined,
+      workspace: workspace || {
+        npcs: [],
+        monsters: [],
+        customItems: [],
+        customItemsAndSpells: [],
+        locations: [],
+        campaignLogs: [],
+        combatSummaries: [],
+        folders: [],
+        activeEncounter: {
+          id: 'enc-default',
+          name: 'Encuentro Inicial',
+          round: 1,
+          currentTurnIndex: 0,
+          combatants: [],
+          isActive: false,
+          combatNotes: '',
+          combatLog: [],
+        },
+        favoritesSRD: [],
+      },
+      updatedAt: Date.now(),
+    };
+    this.saveWorldSheet(record);
+    return record;
+  },
+
+  // --- COMMUNITY FEEDBACK & SUGGESTIONS ---
+  getFeedback(): FeedbackRecord[] {
+    return readJSON<FeedbackRecord[]>('feedback.json', []);
+  },
+
+  saveFeedback(list: FeedbackRecord[]): void {
+    writeJSON('feedback.json', list);
+  },
+
+  addFeedback(item: Omit<FeedbackRecord, 'id' | 'createdAt'>): FeedbackRecord {
+    const feedbackList = this.getFeedback();
+    const newRecord: FeedbackRecord = {
+      ...item,
+      id: `fb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: Date.now(),
+      status: 'unread',
+    };
+    feedbackList.unshift(newRecord); // newest first
+    this.saveFeedback(feedbackList);
+    return newRecord;
+  },
+
+  deleteFeedback(id: string): boolean {
+    const feedbackList = this.getFeedback();
+    const filtered = feedbackList.filter((f) => f.id !== id);
+    if (filtered.length !== feedbackList.length) {
+      this.saveFeedback(filtered);
+      return true;
+    }
+    return false;
+  },
+
+  updateFeedbackStatus(id: string, status: 'unread' | 'reviewed'): boolean {
+    const feedbackList = this.getFeedback();
+    const item = feedbackList.find((f) => f.id === id);
+    if (!item) return false;
+    item.status = status;
+    this.saveFeedback(feedbackList);
+    return true;
+  },
+
   closeRoom(code: string): boolean {
     const rooms = this.getRooms();
     const norm = code.trim().toUpperCase();
@@ -321,7 +467,7 @@ export const dataStore = {
   getHostSettings(): HostSettings {
     const defaultSettings: HostSettings = {
       headerTitle: 'WeRoll',
-      headerSubtitle: 'Companion & DM Suite v0.4',
+      headerSubtitle: 'Companion & DM Suite v0.5 ALFA',
       headerLogoIcon: 'shield',
       aiModel: 'gemini-flash-lite-latest',
       moderatorPassword: 'admin',
@@ -340,12 +486,26 @@ export const dataStore = {
       },
       developerNotice: {
         enabled: true,
-        title: 'WeRoll • Novedades v0.4',
+        title: 'WeRoll • Novedades v0.5 ALFA (Lanzamiento Público)',
         content:
-          'Sincronización en tiempo real de credenciales maestras, modelo IA, avisos del administrador en Lobby y bóveda persistente en la nube.',
-        version: '0.4',
+          '¡WeRoll se abre al público! Esperamos el feedback de toda la comunidad de aventureros. Incluye inyección manual de fichas/mundos, gestión y reseteo de contraseñas y buzón de sugerencias.',
+        version: '0.5 ALFA',
       },
       changelog: [
+        {
+          version: '0.5 ALFA',
+          date: '2026-10-16',
+          title: 'WeRoll 0.5 ALFA • Apertura Pública, Feedback Comunitario & Rescate de Fichas',
+          changes: [
+            '¡Lanzamiento público de WeRoll! La plataforma abre sus puertas a toda la comunidad de D&D 5E. Esperamos ansiosos su feedback para pulir cada rincón de la suite.',
+            'Botón de Feedback integrado en la barra superior (junto al Oráculo IA y Manual) para enviar reportes de bugs, sugerencias y otros comentarios.',
+            'Bandeja de Sugerencias y Feedback en el Panel de Administrador para revisar y gestionar los comentarios de la comunidad.',
+            'Inyección manual de Player Sheets y World Sheets desde la Gestión de Cuentas para que los moderadores rescaten o restauren datos de cualquier usuario.',
+            'Gestión de contraseñas de usuarios en el Panel de Administrador: visualización de contraseña actual y asignación de nueva clave.',
+            'Pestaña de Seguridad en el Lobby para que los usuarios cambien su contraseña y flujo de solicitud de reseteo asistido ("Olvidé mi contraseña").',
+            'Bolsa interactiva de monedas en la ficha de personaje (PO, PP, PC, PE, PL) con edición directa y conversor de valor total.',
+          ],
+        },
         {
           version: '0.4',
           date: '2026-10-16',
@@ -502,25 +662,66 @@ export const dataStore = {
     return {
       exportedAt: new Date().toISOString(),
       platform: 'WeRoll 5E',
-      users: this.getUsers().map((u) => ({ ...u, password: '[REDACTED]' })),
+      schemaVersion: 2,
+      appVersion: '0.5 ALFA',
+      users: this.getUsers(),
       rooms: this.getRooms(),
       sheets: this.getPlayerSheets(),
       worlds: this.getWorldSheets(),
       backups: this.getBackups(),
       settings: this.getHostSettings(),
+      feedback: this.getFeedback(),
     };
   },
 
-  restoreBackup(payload: any): { success: boolean; type: string; count: number; message: string } {
+  restoreBackup(payload: any): {
+    success: boolean;
+    type: string;
+    count: number;
+    details?: any;
+    message: string;
+  } {
     if (!payload || typeof payload !== 'object') {
       throw new Error('El archivo proporcionado no contiene un JSON válido.');
     }
 
-    // Case 1: Full Database Backup Export
-    if (payload.sheets || payload.worlds || payload.backups || payload.settings) {
+    // Case 1: Full Master Database Backup Export
+    if (
+      payload.users ||
+      payload.sheets ||
+      payload.worlds ||
+      payload.backups ||
+      payload.settings ||
+      payload.feedback ||
+      payload.schemaVersion === 2
+    ) {
+      let restoredUsersCount = 0;
       let restoredSheetsCount = 0;
       let restoredWorldsCount = 0;
+      let restoredBackupsCount = 0;
+      let restoredFeedbackCount = 0;
+      let restoredSettings = false;
 
+      // 1. Restore Users (including passwords, roles, statuses, requests)
+      if (Array.isArray(payload.users)) {
+        const currentUsers = this.getUsers();
+        for (const u of payload.users) {
+          if (u && (u.id || u.email)) {
+            const idx = currentUsers.findIndex(
+              (item) => (u.id && item.id === u.id) || (u.email && item.email.toLowerCase() === u.email.toLowerCase())
+            );
+            if (idx >= 0) {
+              currentUsers[idx] = { ...currentUsers[idx], ...u };
+            } else {
+              currentUsers.push(u);
+            }
+            restoredUsersCount++;
+          }
+        }
+        this.saveUsers(currentUsers);
+      }
+
+      // 2. Restore Player Sheets
       if (Array.isArray(payload.sheets)) {
         const currentSheets = this.getPlayerSheets();
         for (const s of payload.sheets) {
@@ -534,6 +735,7 @@ export const dataStore = {
         writeJSON('sheets.json', currentSheets);
       }
 
+      // 3. Restore DM World Sheets
       if (Array.isArray(payload.worlds)) {
         const currentWorlds = this.getWorldSheets();
         for (const w of payload.worlds) {
@@ -547,23 +749,62 @@ export const dataStore = {
         writeJSON('worlds.json', currentWorlds);
       }
 
+      // 4. Restore Rotating Backups
       if (payload.backups && typeof payload.backups === 'object') {
         const currentBackups = this.getBackups();
         Object.assign(currentBackups, payload.backups);
+        restoredBackupsCount = Object.keys(payload.backups).length;
         writeJSON('backups.json', currentBackups);
       }
 
+      // 5. Restore Feedback & Suggestions
+      if (Array.isArray(payload.feedback)) {
+        const currentFeedback = this.getFeedback();
+        for (const fb of payload.feedback) {
+          if (fb && fb.id) {
+            const idx = currentFeedback.findIndex((item) => item.id === fb.id);
+            if (idx >= 0) currentFeedback[idx] = fb;
+            else currentFeedback.push(fb);
+            restoredFeedbackCount++;
+          }
+        }
+        this.saveFeedback(currentFeedback);
+      }
+
+      // 6. Restore Settings (greetings, notice, changelog, moderator password, models)
       if (payload.settings && typeof payload.settings === 'object') {
         const currentSettings = this.getHostSettings();
         const mergedSettings = { ...currentSettings, ...payload.settings };
         this.saveHostSettings(mergedSettings);
+        restoredSettings = true;
+      }
+
+      // 7. Restore Game Rooms
+      if (Array.isArray(payload.rooms)) {
+        const currentRooms = this.getRooms();
+        for (const r of payload.rooms) {
+          if (r && r.roomCode) {
+            const idx = currentRooms.findIndex((item) => item.roomCode === r.roomCode);
+            if (idx >= 0) currentRooms[idx] = r;
+            else currentRooms.push(r);
+          }
+        }
+        this.saveRooms(currentRooms);
       }
 
       return {
         success: true,
         type: 'full_database',
-        count: restoredSheetsCount + restoredWorldsCount,
-        message: `Respaldo total restaurado: ${restoredSheetsCount} fichas de jugador y ${restoredWorldsCount} World Sheets importados con éxito.`,
+        count: restoredSheetsCount + restoredWorldsCount + restoredUsersCount,
+        details: {
+          users: restoredUsersCount,
+          sheets: restoredSheetsCount,
+          worlds: restoredWorldsCount,
+          backups: restoredBackupsCount,
+          feedback: restoredFeedbackCount,
+          settings: restoredSettings,
+        },
+        message: `¡Respaldo Maestro Restaurado con Éxito! Se actualizaron ${restoredUsersCount} cuentas de usuario (con contraseñas y roles), ${restoredSheetsCount} fichas de jugador, ${restoredWorldsCount} World Sheets, ${restoredBackupsCount} respaldos rotativos, ${restoredFeedbackCount} reportes de feedback y la configuración total del servidor.`,
       };
     }
 

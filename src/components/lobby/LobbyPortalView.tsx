@@ -36,6 +36,12 @@ import {
   RotateCcw,
   Save,
   Bell,
+  Eye,
+  EyeOff,
+  MessageSquarePlus,
+  Bug,
+  Lightbulb,
+  Mail,
 } from 'lucide-react';
 import {
   Character5e,
@@ -47,6 +53,7 @@ import {
 } from '../../types/dnd';
 import { AuthSessionUser } from '../auth/RoleSelectionModal';
 import { SAMPLE_CHARACTER, SAMPLE_DM_WORKSPACE } from '../../data/srd';
+import { BrandLogo, PREFAB_LOGOS } from '../common/BrandLogo';
 
 interface LobbyPortalViewProps {
   authUser: AuthSessionUser | null;
@@ -91,7 +98,7 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
   const canDm = authUser?.role === 'dm' || authUser?.role === 'both' || isModerator;
 
   const defaultTab = canPlay ? 'characters' : canDm ? 'worlds' : 'characters';
-  const [activeTab, setActiveTab] = useState<'characters' | 'worlds' | 'admin'>(defaultTab);
+  const [activeTab, setActiveTab] = useState<'characters' | 'worlds' | 'admin' | 'security'>(defaultTab);
 
   // Sync tab if role changes
   useEffect(() => {
@@ -102,7 +109,7 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
     } else if (activeTab === 'worlds' && !canDm) {
       setActiveTab('characters');
     }
-  }, [authUser?.role, isModerator, canPlay, canDm]);
+  }, [authUser?.role, isModerator, canPlay, canDm, activeTab]);
 
   // Player Join Table Modal state
   const [joinModalChar, setJoinModalChar] = useState<Character5e | null>(null);
@@ -181,6 +188,66 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
     hostSettings.adminGreeting?.type || 'info'
   );
   const [greetingSaveStatus, setGreetingSaveStatus] = useState<string>('');
+
+  // USER SELF-SERVICE PASSWORD & SECURITY TAB STATE
+  const [userOldPassword, setUserOldPassword] = useState<string>('');
+  const [userNewPassword, setUserNewPassword] = useState<string>('');
+  const [userConfirmPassword, setUserConfirmPassword] = useState<string>('');
+  const [userPassStatusMsg, setUserPassStatusMsg] = useState<string>('');
+  const [userPassErrorMsg, setUserPassErrorMsg] = useState<string>('');
+  const [isUpdatingUserPass, setIsUpdatingUserPass] = useState<boolean>(false);
+
+  const [userForgotMsg, setUserForgotMsg] = useState<string>('');
+  const [userForgotNote, setUserForgotNote] = useState<string>('');
+  const [isRequestingForgotInLobby, setIsRequestingForgotInLobby] = useState<boolean>(false);
+
+  // ADMIN: USER PASSWORD MANAGEMENT MODAL STATE
+  const [adminManagingUserPassword, setAdminManagingUserPassword] = useState<any | null>(null);
+  const [adminUserNewPassword, setAdminUserNewPassword] = useState<string>('');
+  const [showRevealedPassword, setShowRevealedPassword] = useState<boolean>(false);
+  const [adminUserPassMsg, setAdminUserPassMsg] = useState<string>('');
+  const [isAdminSavingUserPassword, setIsAdminSavingUserPassword] = useState<boolean>(false);
+
+  // ADMIN: INJECT SHEET OR WORLD TO USER MODAL STATE
+  const [adminInjectingUser, setAdminInjectingUser] = useState<any | null>(null);
+  const [injectTargetType, setInjectTargetType] = useState<'player' | 'world'>('player');
+  const [injectJsonContent, setInjectJsonContent] = useState<string>('');
+  const [injectCustomTitle, setInjectCustomTitle] = useState<string>('');
+  const [injectRoomCode, setInjectRoomCode] = useState<string>('');
+  const [injectRoomPassword, setInjectRoomPassword] = useState<string>('');
+  const [injectStatusMsg, setInjectStatusMsg] = useState<string>('');
+  const [injectErrorMsg, setInjectErrorMsg] = useState<string>('');
+  const [isInjectingData, setIsInjectingData] = useState<boolean>(false);
+  const injectFileInputRef = useRef<HTMLInputElement | null>(null);
+  const logoFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Logo Image File Upload Handler
+  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor selecciona un archivo de imagen válido (JPG, PNG, WebP, GIF, SVG).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const dataUrl = evt.target?.result as string;
+      setAdminSettingsForm((prev) => ({
+        ...prev,
+        logoType: 'custom',
+        customLogoUrl: dataUrl,
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // ADMIN: FEEDBACK & SUGGESTIONS STATE
+  const [adminUpdatesSection, setAdminUpdatesSection] = useState<'changelog' | 'feedback'>('changelog');
+  const [adminFeedbackList, setAdminFeedbackList] = useState<any[]>([]);
+  const [isLoadingFeedback, setIsLoadingFeedback] = useState<boolean>(false);
+  const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState<'all' | 'bug' | 'suggestion' | 'other'>('all');
 
   // Sync state when hostSettings updates in real-time from server across devices
   useEffect(() => {
@@ -272,6 +339,245 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
     }
   };
 
+  // Fetch feedback list for admin
+  const fetchAdminFeedback = async () => {
+    setIsLoadingFeedback(true);
+    try {
+      const res = await fetch('/api/admin/feedback');
+      if (res.ok) {
+        const data = await res.json();
+        setAdminFeedbackList(data.feedback || []);
+      }
+    } catch (err) {
+      console.error('Error fetching admin feedback:', err);
+    } finally {
+      setIsLoadingFeedback(false);
+    }
+  };
+
+  const handleDeleteFeedback = async (id: string) => {
+    if (!window.confirm('¿Deseas eliminar este mensaje de feedback permanentemente?')) return;
+    try {
+      const res = await fetch(`/api/admin/feedback/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setAdminFeedbackList((prev) => prev.filter((f) => f.id !== id));
+      }
+    } catch (err) {
+      console.error('Error deleting feedback:', err);
+    }
+  };
+
+  const handleToggleFeedbackStatus = async (id: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'reviewed' ? 'unread' : 'reviewed';
+    try {
+      const res = await fetch(`/api/admin/feedback/${id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (res.ok) {
+        setAdminFeedbackList((prev) =>
+          prev.map((f) => (f.id === id ? { ...f, status: nextStatus } : f))
+        );
+      }
+    } catch (err) {
+      console.error('Error updating feedback status:', err);
+    }
+  };
+
+  // USER SELF-SERVICE PASSWORD HANDLERS
+  const handleUserChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserPassStatusMsg('');
+    setUserPassErrorMsg('');
+
+    if (!userOldPassword || !userNewPassword || !userConfirmPassword) {
+      setUserPassErrorMsg('Por favor completa todos los campos.');
+      return;
+    }
+    if (userNewPassword !== userConfirmPassword) {
+      setUserPassErrorMsg('La nueva contraseña y su confirmación no coinciden.');
+      return;
+    }
+    if (userNewPassword.length < 3) {
+      setUserPassErrorMsg('La nueva contraseña debe tener al menos 3 caracteres.');
+      return;
+    }
+
+    setIsUpdatingUserPass(true);
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: authUser?.email,
+          oldPassword: userOldPassword,
+          newPassword: userNewPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setUserPassErrorMsg(data.error || 'Error al actualizar la contraseña.');
+      } else {
+        setUserPassStatusMsg(data.message || '¡Contraseña actualizada con éxito!');
+        setUserOldPassword('');
+        setUserNewPassword('');
+        setUserConfirmPassword('');
+      }
+    } catch (err) {
+      setUserPassErrorMsg('Error de conexión con el servidor.');
+    } finally {
+      setIsUpdatingUserPass(false);
+    }
+  };
+
+  const handleUserRequestForgotInLobby = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserForgotMsg('');
+    if (!authUser?.email) return;
+
+    setIsRequestingForgotInLobby(true);
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: authUser.email,
+          note: userForgotNote || 'El usuario solicitó restablecimiento desde la pestaña de seguridad del Lobby.',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setUserPassErrorMsg(data.error || 'Error al enviar solicitud.');
+      } else {
+        setUserForgotMsg(data.message || 'Solicitud enviada al Administrador.');
+        setUserForgotNote('');
+      }
+    } catch (err) {
+      setUserPassErrorMsg('Error de conexión con el servidor.');
+    } finally {
+      setIsRequestingForgotInLobby(false);
+    }
+  };
+
+  // ADMIN USER PASSWORD MANAGEMENT HANDLER
+  const handleAdminUpdateUserPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminManagingUserPassword) return;
+    setAdminUserPassMsg('');
+    if (!adminUserNewPassword.trim()) {
+      setAdminUserPassMsg('La nueva contraseña no puede estar vacía.');
+      return;
+    }
+
+    setIsAdminSavingUserPassword(true);
+    try {
+      const res = await fetch(`/api/admin/users/${adminManagingUserPassword.id}/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword: adminUserNewPassword.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAdminUserPassMsg(data.error || 'Error al actualizar contraseña.');
+      } else {
+        setAdminUserPassMsg(data.message || 'Contraseña actualizada.');
+        // Update user in adminUsers state
+        setAdminUsers((prev) =>
+          prev.map((u) =>
+            u.id === adminManagingUserPassword.id
+              ? { ...u, password: adminUserNewPassword.trim(), passwordResetRequested: false }
+              : u
+          )
+        );
+        setTimeout(() => {
+          setAdminManagingUserPassword(null);
+          setAdminUserPassMsg('');
+          setAdminUserNewPassword('');
+        }, 1800);
+      }
+    } catch (err) {
+      setAdminUserPassMsg('Error de conexión.');
+    } finally {
+      setIsAdminSavingUserPassword(false);
+    }
+  };
+
+  // ADMIN INJECTION HANDLERS
+  const handleInjectFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        JSON.parse(text); // validate
+        setInjectJsonContent(text);
+        setInjectErrorMsg('');
+      } catch (err) {
+        setInjectErrorMsg('El archivo seleccionado no contiene un formato JSON válido.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleAdminExecuteInject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminInjectingUser) return;
+    setInjectStatusMsg('');
+    setInjectErrorMsg('');
+
+    if (!injectJsonContent.trim()) {
+      setInjectErrorMsg('Por favor carga un archivo JSON o pega el contenido JSON.');
+      return;
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(injectJsonContent.trim());
+    } catch (err) {
+      setInjectErrorMsg('El texto ingresado no es un JSON válido.');
+      return;
+    }
+
+    setIsInjectingData(true);
+    try {
+      const res = await fetch(`/api/admin/users/${adminInjectingUser.id}/inject-sheet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: injectTargetType,
+          data: parsed,
+          name: injectCustomTitle.trim() || undefined,
+          roomCode: injectRoomCode.trim() || undefined,
+          roomPassword: injectRoomPassword.trim() || undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setInjectErrorMsg(data.error || 'Error al inyectar los datos.');
+      } else {
+        setInjectStatusMsg(data.message || '¡Datos inyectados exitosamente!');
+        fetchVaultDetails();
+        fetchUserSheets();
+        setTimeout(() => {
+          setAdminInjectingUser(null);
+          setInjectJsonContent('');
+          setInjectCustomTitle('');
+          setInjectRoomCode('');
+          setInjectRoomPassword('');
+          setInjectStatusMsg('');
+        }, 2000);
+      }
+    } catch (err) {
+      setInjectErrorMsg('Error de conexión con el servidor.');
+    } finally {
+      setIsInjectingData(false);
+    }
+  };
+
   useEffect(() => {
     if (authUser && authUser.status === 'approved') {
       fetchUserSheets();
@@ -280,6 +586,7 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
       fetchAdminUsers();
       fetchVaultDetails();
       fetchAdminChangelog();
+      fetchAdminFeedback();
     }
   }, [authUser?.email, authUser?.status, activeTab, isModerator]);
 
@@ -439,9 +746,12 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
         }
 
         setRestoreMessage(data.message || 'Respaldo restaurado con éxito en el servidor.');
-        // Refresh vault & sheets lists
+        // Refresh all lists across the system
         fetchVaultDetails();
         fetchUserSheets();
+        fetchAdminUsers();
+        fetchAdminFeedback();
+        fetchAdminChangelog();
       } catch (err: any) {
         setRestoreError(err.message || 'El archivo seleccionado no es un JSON de respaldo válido.');
       } finally {
@@ -663,9 +973,7 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
         <div className="w-full bg-[#16171d] border-2 border-amber-900/60 rounded-3xl p-8 sm:p-10 shadow-2xl text-center relative overflow-hidden animate-in fade-in zoom-in-95">
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-600 via-purple-600 to-amber-600" />
 
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-600 to-amber-950 border border-amber-500/80 shadow-xl text-amber-200 mb-6">
-            <Shield className="w-10 h-10" />
-          </div>
+          <BrandLogo hostSettings={hostSettings} size="xl" className="mb-6 mx-auto" />
 
           <h1 className="font-cinzel font-black text-3xl sm:text-4xl text-amber-300 tracking-wider">
             {hostSettings.headerTitle || 'WeRoll 5E'}
@@ -810,9 +1118,7 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
       {/* Lobby Top Banner: Welcome, User Badge & Changelog */}
       <div className="bg-gradient-to-r from-[#171821] via-[#1c1d29] to-[#171821] border border-amber-900/60 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-950 border border-amber-500/80 shadow-lg flex items-center justify-center text-amber-200 shrink-0">
-            <Shield className="w-7 h-7" />
-          </div>
+          <BrandLogo hostSettings={hostSettings} size="lg" />
           <div>
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="font-cinzel font-black text-2xl text-amber-300 tracking-wide">
@@ -901,6 +1207,18 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
             World Sheets del DM ({worldSheets.length}/3)
           </button>
         )}
+
+        <button
+          onClick={() => setActiveTab('security')}
+          className={`px-5 py-2.5 rounded-2xl font-cinzel font-bold text-xs uppercase tracking-wider transition flex items-center gap-2 ${
+            activeTab === 'security'
+              ? 'bg-amber-700 text-white shadow-lg shadow-amber-950/50'
+              : 'bg-stone-900 text-stone-400 hover:text-stone-200 hover:bg-stone-800'
+          }`}
+        >
+          <KeyRound className="w-4 h-4" />
+          Seguridad & Contraseña
+        </button>
 
         {isModerator && (
           <button
@@ -1195,10 +1513,164 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
       )}
 
       {/* =================================================================== */}
-      {/* TAB 3: ADMIN PANEL (SOLO MODERADOR / ADMINISTRADOR)                  */}
+      {/* TAB 3: USER SECURITY & PASSWORD MANAGEMENT                          */}
+      {/* =================================================================== */}
+      {activeTab === 'security' && (
+        <div className="max-w-2xl mx-auto space-y-6 animate-in fade-in">
+          {/* Header */}
+          <div className="bg-[#161720] border border-amber-900/60 rounded-3xl p-6 shadow-xl flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-950/80 border border-amber-500 flex items-center justify-center text-amber-300 shrink-0 shadow-lg">
+              <KeyRound className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="font-cinzel font-bold text-xl text-amber-300">
+                Seguridad & Gestión de Contraseña
+              </h2>
+              <p className="text-xs text-stone-400 mt-0.5">
+                Cuenta de <strong className="text-stone-200">{authUser.displayName}</strong> ({authUser.email})
+              </p>
+            </div>
+          </div>
+
+          {/* Form: Change Password */}
+          <form
+            onSubmit={handleUserChangePassword}
+            className="bg-[#161720] border border-stone-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-4"
+          >
+            <h3 className="font-cinzel font-bold text-base text-stone-200 flex items-center gap-2 border-b border-stone-800 pb-3">
+              <Lock className="w-4 h-4 text-amber-400" />
+              Cambiar mi Contraseña
+            </h3>
+
+            {userPassStatusMsg && (
+              <div className="p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{userPassStatusMsg}</span>
+              </div>
+            )}
+
+            {userPassErrorMsg && (
+              <div className="p-3.5 rounded-xl bg-red-950/80 border border-red-700 text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{userPassErrorMsg}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                Contraseña Actual
+              </label>
+              <input
+                type="password"
+                value={userOldPassword}
+                onChange={(e) => setUserOldPassword(e.target.value)}
+                placeholder="Tu contraseña actual..."
+                required
+                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none transition"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                  Nueva Contraseña
+                </label>
+                <input
+                  type="password"
+                  value={userNewPassword}
+                  onChange={(e) => setUserNewPassword(e.target.value)}
+                  placeholder="Mínimo 3 caracteres..."
+                  required
+                  className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                  Confirmar Nueva Contraseña
+                </label>
+                <input
+                  type="password"
+                  value={userConfirmPassword}
+                  onChange={(e) => setUserConfirmPassword(e.target.value)}
+                  placeholder="Repite la nueva clave..."
+                  required
+                  className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none transition"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="submit"
+                disabled={isUpdatingUserPass}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2 disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                {isUpdatingUserPass ? 'Guardando...' : 'Actualizar Contraseña'}
+              </button>
+            </div>
+          </form>
+
+          {/* Form: Forgot / Assistance Box */}
+          <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
+            <h3 className="font-cinzel font-bold text-base text-stone-200 flex items-center gap-2 border-b border-stone-800 pb-3">
+              <HelpCircle className="w-4 h-4 text-blue-400" />
+              ¿Olvidaste tu contraseña o necesitas reseteo?
+            </h3>
+            <p className="text-xs text-stone-400 leading-relaxed">
+              Si no recuerdas tu contraseña actual para cambiarla, envía una solicitud formal de restablecimiento al Administrador del servidor. El moderador verá la solicitud en su panel y te asignará una nueva contraseña.
+            </p>
+
+            {userForgotMsg ? (
+              <div className="p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{userForgotMsg}</span>
+              </div>
+            ) : (
+              <form onSubmit={handleUserRequestForgotInLobby} className="space-y-3 pt-1">
+                <div>
+                  <label className="block text-[11px] font-cinzel font-semibold text-stone-400 mb-1">
+                    Nota o Mensaje para el Administrador (Opcional):
+                  </label>
+                  <input
+                    type="text"
+                    value={userForgotNote}
+                    onChange={(e) => setUserForgotNote(e.target.value)}
+                    placeholder="Ej. Olvidé mi contraseña, por favor restablecer..."
+                    className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs outline-none focus:border-amber-500 transition"
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isRequestingForgotInLobby}
+                    className="px-5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-cinzel font-bold text-xs border border-amber-800/60 shadow transition flex items-center gap-2 disabled:opacity-50"
+                  >
+                    <Mail className="w-4 h-4" />
+                    {isRequestingForgotInLobby ? 'Enviando...' : 'Solicitar Reseteo al Administrador'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* TAB 4: ADMIN PANEL (SOLO MODERADOR / ADMINISTRADOR)                  */}
       {/* =================================================================== */}
       {activeTab === 'admin' && isModerator && (
         <div className="space-y-8 animate-in fade-in">
+          {/* Hidden file input for restore (available globally in Admin) */}
+          <input
+            type="file"
+            ref={restoreFileInputRef}
+            accept=".json,application/json"
+            onChange={handleRestoreFileChange}
+            className="hidden"
+          />
+
           {/* Header */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-800 pb-4">
             <div>
@@ -1213,22 +1685,58 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                 Panel de Control de Administrador
               </h2>
               <p className="text-xs text-stone-400 mt-1">
-                Gestión de cuentas y roles, bóveda de copias de seguridad de la base de datos, blog de actualizaciones y configuración de IA.
+                Gestión de cuentas y roles, bóveda maestra de respaldos, blog de actualizaciones y configuración del servidor.
               </p>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => restoreFileInputRef.current?.click()}
+                disabled={restoreLoading}
+                className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2 disabled:opacity-50"
+                title="Importar y restaurar un archivo de respaldo completo en el servidor"
+              >
+                <Upload className="w-4 h-4" />
+                {restoreLoading ? 'Restaurando...' : 'Importar Respaldo Total'}
+              </button>
+
               <a
                 href="/api/vault/backup-all"
                 download
                 className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
-                title="Descarga una copia completa de la base de datos en formato JSON"
+                title="Descarga una copia completa de la base de datos (cuentas, contraseñas, fichas, mundos, novedades y feedback)"
               >
                 <Download className="w-4 h-4" />
                 Descargar Respaldo Total
               </a>
             </div>
           </div>
+
+          {/* Global Admin Restore Status Message */}
+          {restoreMessage && (
+            <div className="p-4 rounded-2xl bg-emerald-950/80 border border-emerald-600 text-emerald-200 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+                <span className="font-medium leading-relaxed">{restoreMessage}</span>
+              </div>
+              <button onClick={() => setRestoreMessage('')} className="p-1 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {restoreError && (
+            <div className="p-4 rounded-2xl bg-red-950/80 border border-red-600 text-red-200 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+                <span className="font-medium leading-relaxed">{restoreError}</span>
+              </div>
+              <button onClick={() => setRestoreError('')} className="p-1 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
 
           {/* Sub-tabs Navigation */}
           <div className="flex items-center gap-2 border-b border-stone-800/80 pb-2 overflow-x-auto">
@@ -1332,6 +1840,12 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                         <td className="py-3 px-3">
                           <span className="font-semibold text-stone-200 block text-xs">{u.displayName}</span>
                           <span className="font-mono text-[11px] text-stone-400">{u.email}</span>
+                          {u.passwordResetRequested && (
+                            <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-300 font-bold bg-amber-950/90 border border-amber-600/70 px-2 py-0.5 rounded-full w-fit">
+                              <AlertCircle className="w-3 h-3 text-amber-400" />
+                              <span>Reseteo Solicitado</span>
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-3">
                           <select
@@ -1366,6 +1880,46 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                           {new Date(u.registeredAt || Date.now()).toLocaleDateString()}
                         </td>
                         <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
+                          {/* Password Management Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdminManagingUserPassword(u);
+                              setAdminUserNewPassword('');
+                              setShowRevealedPassword(false);
+                              setAdminUserPassMsg('');
+                            }}
+                            className={`px-2.5 py-1 rounded-lg border text-xs font-cinzel font-bold transition inline-flex items-center gap-1 ${
+                              u.passwordResetRequested
+                                ? 'bg-amber-950 border-amber-500 text-amber-200 animate-pulse'
+                                : 'bg-stone-800 hover:bg-stone-700 border-stone-700 text-stone-300'
+                            }`}
+                            title="Ver y gestionar contraseña del usuario"
+                          >
+                            <KeyRound className="w-3 h-3 text-amber-400" />
+                            <span>Clave</span>
+                          </button>
+
+                          {/* Inject Sheet or World Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdminInjectingUser(u);
+                              setInjectTargetType(u.role === 'dm' ? 'world' : 'player');
+                              setInjectJsonContent('');
+                              setInjectCustomTitle('');
+                              setInjectRoomCode('');
+                              setInjectRoomPassword('');
+                              setInjectStatusMsg('');
+                              setInjectErrorMsg('');
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-purple-950/80 hover:bg-purple-900 border border-purple-600 text-purple-200 text-xs font-cinzel font-bold transition inline-flex items-center gap-1 shadow"
+                            title="Inyectar o restaurar Player Sheet o World Sheet a este usuario"
+                          >
+                            <FileUp className="w-3 h-3 text-purple-300" />
+                            <span>Inyectar</span>
+                          </button>
+
                           {u.status !== 'approved' && (
                             <button
                               onClick={() => handleAdminApproveUser(u.id)}
@@ -1396,72 +1950,76 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
           {/* =================================================================== */}
           {adminSubTab === 'vault' && (
             <div className="space-y-6">
-              {/* Top Action Bar for Vault */}
-              <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="font-cinzel font-bold text-base text-stone-100 flex items-center gap-2">
-                    <Database className="w-5 h-5 text-blue-400" />
-                    Bóveda Central de Respaldos
-                  </h3>
-                  <p className="text-xs text-stone-400 mt-0.5">
-                    Descarga copias individuales de fichas y campañas, o sube archivos de respaldo para restaurarlos en el servidor.
-                  </p>
+              {/* Top Action Bar: Master Vault & Full Backup */}
+              <div className="bg-gradient-to-r from-[#171822] via-[#1a1b26] to-[#171822] border-2 border-blue-900/60 rounded-3xl p-6 sm:p-7 shadow-2xl space-y-4">
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-950 border border-blue-500/80 flex items-center justify-center text-blue-200 shrink-0 shadow-lg">
+                      <Database className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-cinzel font-bold text-lg text-blue-200">
+                          Bóveda Maestra & Respaldo Total de la Aplicación
+                        </h3>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-950 border border-blue-600/70 text-blue-300 uppercase">
+                          Sincronización Total
+                        </span>
+                      </div>
+                      <p className="text-xs text-stone-300 mt-1 max-w-2xl leading-relaxed">
+                        Este respaldo exporta e importa absolutamente <strong>todo el estado de WeRoll</strong> en un único archivo JSON: cuentas con contraseñas y roles, fichas de jugadores, World Sheets de DM, respaldos rotativos de partidas, avisos, notas del blog de versiones y el buzón de feedback. Ideal para mover la app entre actualizaciones o respaldar antes de publicar en GitHub.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 flex-wrap w-full lg:w-auto justify-end">
+                    <button
+                      type="button"
+                      onClick={() => restoreFileInputRef.current?.click()}
+                      disabled={restoreLoading}
+                      className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Upload className="w-4 h-4" />
+                      {restoreLoading ? 'Restaurando...' : 'Importar Respaldo Total'}
+                    </button>
+
+                    <a
+                      href="/api/vault/backup-all"
+                      download
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      Descargar Respaldo Total Maestro
+                    </a>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-3 flex-wrap">
-                  {/* Hidden file input for restore */}
-                  <input
-                    type="file"
-                    ref={restoreFileInputRef}
-                    accept=".json,application/json"
-                    onChange={handleRestoreFileChange}
-                    className="hidden"
-                  />
-
-                  <button
-                    onClick={() => restoreFileInputRef.current?.click()}
-                    disabled={restoreLoading}
-                    className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
-                  >
-                    <Upload className="w-4 h-4" />
-                    {restoreLoading ? 'Restaurando...' : 'Subir / Restaurar Respaldo (JSON)'}
-                  </button>
-
-                  <a
-                    href="/api/vault/backup-all"
-                    download
-                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
-                  >
-                    <Download className="w-4 h-4" />
-                    Descargar Respaldo Total
-                  </a>
+                {/* Badges of included elements */}
+                <div className="pt-2 border-t border-stone-800/80 flex flex-wrap items-center gap-2 text-[11px] text-stone-400">
+                  <span className="text-stone-300 font-cinzel font-bold">Incluido en el Respaldo Maestro:</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-[#121316] border border-stone-800 text-stone-300">
+                    👥 {adminUsers.length} Cuentas & Roles
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-[#121316] border border-stone-800 text-stone-300">
+                    📜 {vaultDetails.sheets.length} Fichas de Jugador
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-[#121316] border border-stone-800 text-stone-300">
+                    🏰 {vaultDetails.worlds.length} World Sheets
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-[#121316] border border-stone-800 text-stone-300">
+                    🔄 {vaultDetails.backups.length} Respaldos Rotativos
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-[#121316] border border-stone-800 text-stone-300">
+                    📰 {changelogList.length} Entradas del Blog
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-[#121316] border border-stone-800 text-stone-300">
+                    💬 {adminFeedbackList.length} Sugerencias & Feedback
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-[#121316] border border-stone-800 text-stone-300">
+                    ⚙️ Configuración & Avisos
+                  </span>
                 </div>
               </div>
-
-              {/* Restore Alert Messages */}
-              {restoreMessage && (
-                <div className="p-4 rounded-2xl bg-emerald-950/80 border border-emerald-600 text-emerald-200 text-xs flex items-center justify-between gap-3 animate-in fade-in">
-                  <div className="flex items-center gap-2.5">
-                    <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
-                    <span>{restoreMessage}</span>
-                  </div>
-                  <button onClick={() => setRestoreMessage('')} className="p-1 hover:text-white">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-
-              {restoreError && (
-                <div className="p-4 rounded-2xl bg-red-950/80 border border-red-600 text-red-200 text-xs flex items-center justify-between gap-3 animate-in fade-in">
-                  <div className="flex items-center gap-2.5">
-                    <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
-                    <span>{restoreError}</span>
-                  </div>
-                  <button onClick={() => setRestoreError('')} className="p-1 hover:text-white">
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
 
               {/* Filter Tabs */}
               <div className="flex items-center gap-2 border-b border-stone-800 pb-2">
@@ -1696,6 +2254,42 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
           {/* =================================================================== */}
           {adminSubTab === 'updates' && (
             <div className="space-y-6">
+              {/* Top Sub-Switcher: Novedades & Versiones vs Sugerencias & Feedback */}
+              <div className="flex items-center gap-2 bg-[#121316] p-1.5 rounded-2xl border border-stone-800 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setAdminUpdatesSection('changelog')}
+                  className={`px-4 py-2 rounded-xl font-cinzel font-bold text-xs transition flex items-center gap-2 ${
+                    adminUpdatesSection === 'changelog'
+                      ? 'bg-amber-600 text-white shadow-md'
+                      : 'text-stone-400 hover:text-stone-200'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Novedades, Versiones & Saludo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminUpdatesSection('feedback');
+                    fetchAdminFeedback();
+                  }}
+                  className={`px-4 py-2 rounded-xl font-cinzel font-bold text-xs transition flex items-center gap-2 ${
+                    adminUpdatesSection === 'feedback'
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'text-stone-400 hover:text-stone-200'
+                  }`}
+                >
+                  <MessageSquarePlus className="w-3.5 h-3.5" />
+                  Sugerencias & Feedback ({adminFeedbackList.length})
+                  {adminFeedbackList.some((f) => f.status === 'unread') && (
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                  )}
+                </button>
+              </div>
+
+              {adminUpdatesSection === 'changelog' && (
+                <>
               {/* 1. SECCIÓN EXCLUSIVA DE ADMINISTRADOR: SALUDO Y AVISO DE MANTENIMIENTO EN EL LOBBY */}
               <form
                 onSubmit={handleSaveAdminGreeting}
@@ -1866,6 +2460,169 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                 </div>
               )}
               </div>
+              </>
+            )}
+
+            {/* 2. SECCIÓN DE FEEDBACK Y SUGERENCIAS DE LA COMUNIDAD */}
+            {adminUpdatesSection === 'feedback' && (
+              <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-5 animate-in fade-in">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-800 pb-4">
+                  <div>
+                    <h3 className="font-cinzel font-bold text-base text-emerald-300 flex items-center gap-2">
+                      <MessageSquarePlus className="w-5 h-5 text-emerald-400" />
+                      Buzón de Sugerencias y Reportes de la Comunidad ({adminFeedbackList.length})
+                    </h3>
+                    <p className="text-xs text-stone-400 mt-0.5">
+                      Mensajes enviados por aventureros y DMs a través del botón superior de Feedback.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={fetchAdminFeedback}
+                      disabled={isLoadingFeedback}
+                      className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-cinzel transition flex items-center gap-1.5"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingFeedback ? 'animate-spin' : ''}`} />
+                      Actualizar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter Pills */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[
+                    { key: 'all', label: 'Todos', count: adminFeedbackList.length },
+                    {
+                      key: 'bug',
+                      label: '🐛 Bugs / Errores',
+                      count: adminFeedbackList.filter((f) => f.category === 'bug').length,
+                    },
+                    {
+                      key: 'suggestion',
+                      label: '💡 Sugerencias',
+                      count: adminFeedbackList.filter((f) => f.category === 'suggestion').length,
+                    },
+                    {
+                      key: 'other',
+                      label: '❓ Otros',
+                      count: adminFeedbackList.filter((f) => f.category === 'other').length,
+                    },
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setFeedbackCategoryFilter(tab.key as any)}
+                      className={`px-3 py-1.5 rounded-xl font-cinzel font-bold text-xs transition flex items-center gap-1.5 ${
+                        feedbackCategoryFilter === tab.key
+                          ? 'bg-emerald-700 text-white shadow'
+                          : 'bg-[#121316] text-stone-400 hover:text-stone-200 border border-stone-800'
+                      }`}
+                    >
+                      <span>{tab.label}</span>
+                      <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-full bg-black/40">
+                        {tab.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Feedback Cards */}
+                {adminFeedbackList.filter(
+                  (f) => feedbackCategoryFilter === 'all' || f.category === feedbackCategoryFilter
+                ).length === 0 ? (
+                  <div className="py-12 text-center text-xs text-stone-500">
+                    No hay mensajes registrados en esta categoría de feedback.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {adminFeedbackList
+                      .filter(
+                        (f) => feedbackCategoryFilter === 'all' || f.category === feedbackCategoryFilter
+                      )
+                      .map((fb) => (
+                        <div
+                          key={fb.id}
+                          className={`p-4 rounded-2xl border transition shadow flex flex-col sm:flex-row items-start justify-between gap-4 ${
+                            fb.status === 'reviewed'
+                              ? 'bg-[#121316]/70 border-stone-800/80 opacity-80'
+                              : fb.category === 'bug'
+                              ? 'bg-[#1a1214] border-red-900/60'
+                              : fb.category === 'suggestion'
+                              ? 'bg-[#121915] border-emerald-900/60'
+                              : 'bg-[#12151d] border-blue-900/60'
+                          }`}
+                        >
+                          <div className="space-y-2 flex-1">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-cinzel font-bold uppercase ${
+                                  fb.category === 'bug'
+                                    ? 'bg-red-950 border border-red-700 text-red-300'
+                                    : fb.category === 'suggestion'
+                                    ? 'bg-emerald-950 border border-emerald-700 text-emerald-300'
+                                    : 'bg-blue-950 border border-blue-700 text-blue-300'
+                                }`}
+                              >
+                                {fb.category === 'bug'
+                                  ? '🐛 Bug / Error'
+                                  : fb.category === 'suggestion'
+                                  ? '💡 Sugerencia'
+                                  : '❓ Otro'}
+                              </span>
+
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                                  fb.status === 'reviewed'
+                                    ? 'bg-stone-800 text-emerald-400'
+                                    : 'bg-amber-950 text-amber-300 border border-amber-700'
+                                }`}
+                              >
+                                {fb.status === 'reviewed' ? '✓ Revisado' : '● Sin revisar'}
+                              </span>
+
+                              <span className="text-[11px] font-mono text-stone-500">
+                                {new Date(fb.createdAt || Date.now()).toLocaleString()}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-stone-200 leading-relaxed font-sans whitespace-pre-wrap">
+                              {fb.description}
+                            </p>
+
+                            {(fb.userName || fb.userEmail) && (
+                              <div className="text-[11px] text-stone-400 font-cinzel flex items-center gap-2 pt-1">
+                                <span>Remitente:</span>
+                                <strong className="text-stone-300">{fb.userName || 'Usuario'}</strong>
+                                {fb.userEmail && <span className="font-mono text-stone-400">({fb.userEmail})</span>}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-start shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleFeedbackStatus(fb.id, fb.status || 'unread')}
+                              className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-cinzel transition"
+                            >
+                              {fb.status === 'reviewed' ? 'Marcar pendiente' : 'Marcar revisado'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFeedback(fb.id)}
+                              className="p-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-900/50 transition"
+                              title="Eliminar mensaje"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
             </div>
           )}
 
@@ -1941,6 +2698,199 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                     className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs font-mono outline-none focus:border-blue-500"
                   />
                 </div>
+              </div>
+
+              {/* BRAND LOGO CUSTOMIZATION SECTION */}
+              <div className="p-5 rounded-2xl bg-[#121316] border border-amber-900/60 shadow-lg space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-800 pb-3">
+                  <div>
+                    <h4 className="font-cinzel font-bold text-sm text-amber-300 flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-amber-400" />
+                      Personalización del Logo de WeRoll
+                    </h4>
+                    <p className="text-[11px] text-stone-400 mt-0.5">
+                      Sube tu propio archivo de imagen (JPG, PNG, WebP) o elige entre la lista de iconos prefabricados D&D.
+                    </p>
+                  </div>
+
+                  {/* Live Preview Box */}
+                  <div className="px-3.5 py-2 rounded-xl bg-[#181920] border border-stone-800 flex items-center gap-3">
+                    <span className="text-[10px] font-cinzel font-semibold uppercase text-stone-500">Vista Previa:</span>
+                    <BrandLogo hostSettings={adminSettingsForm} size="md" />
+                    <div>
+                      <span className="font-cinzel font-bold text-xs text-amber-300 block leading-none">
+                        {adminSettingsForm.headerTitle || 'WeRoll'}
+                      </span>
+                      <span className="text-[9px] text-stone-400 font-cinzel block mt-0.5">
+                        {adminSettingsForm.headerSubtitle || 'Companion 5E'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Hidden File Input for Logo Image */}
+                <input
+                  type="file"
+                  ref={logoFileInputRef}
+                  accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml"
+                  onChange={handleLogoFileUpload}
+                  className="hidden"
+                />
+
+                {/* Logo Type Selector: Prefab Icons vs Custom Upload */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAdminSettingsForm({ ...adminSettingsForm, logoType: 'icon' })}
+                    className={`p-3.5 rounded-2xl border text-left transition flex items-center gap-3 ${
+                      (adminSettingsForm.logoType || 'icon') === 'icon'
+                        ? 'bg-amber-950/80 border-amber-500 text-amber-200 shadow-md ring-1 ring-amber-500'
+                        : 'bg-[#161720] border-stone-800 text-stone-400 hover:border-stone-700'
+                    }`}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-amber-900/40 border border-amber-600/60 flex items-center justify-center text-amber-300 shrink-0">
+                      <Shield className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="font-cinzel font-bold text-xs block text-stone-200">Iconos Prefabricados D&D</span>
+                      <span className="text-[10px] text-stone-400 block">Escudos, dragones, espadas, dados, pergaminos...</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminSettingsForm({ ...adminSettingsForm, logoType: 'custom' });
+                      if (!adminSettingsForm.customLogoUrl) {
+                        logoFileInputRef.current?.click();
+                      }
+                    }}
+                    className={`p-3.5 rounded-2xl border text-left transition flex items-center gap-3 ${
+                      adminSettingsForm.logoType === 'custom'
+                        ? 'bg-purple-950/80 border-purple-500 text-purple-200 shadow-md ring-1 ring-purple-500'
+                        : 'bg-[#161720] border-stone-800 text-stone-400 hover:border-stone-700'
+                    }`}
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-purple-900/40 border border-purple-600/60 flex items-center justify-center text-purple-300 shrink-0">
+                      <Upload className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="font-cinzel font-bold text-xs block text-stone-200">Subir Logo Propio (JPG / PNG)</span>
+                      <span className="text-[10px] text-stone-400 block">Usa la imagen de tu propia marca o servidor</span>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Option A: Prefabricated Icons Selection */}
+                {(adminSettingsForm.logoType || 'icon') === 'icon' && (
+                  <div className="space-y-2 pt-1 animate-in fade-in">
+                    <label className="block text-[11px] font-cinzel font-bold uppercase text-stone-400">
+                      Selecciona un Icono de la Lista Prefabricada:
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-56 overflow-y-auto p-1 pr-2">
+                      {PREFAB_LOGOS.map((item) => {
+                        const IconComp = item.icon;
+                        const isSelected =
+                          (adminSettingsForm.headerLogoIcon || 'shield') === item.id ||
+                          adminSettingsForm.logoIcon === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() =>
+                              setAdminSettingsForm({
+                                ...adminSettingsForm,
+                                logoType: 'icon',
+                                headerLogoIcon: item.id,
+                                logoIcon: item.id,
+                              })
+                            }
+                            className={`p-2.5 rounded-xl border text-center transition flex flex-col items-center justify-center gap-1.5 ${
+                              isSelected
+                                ? 'bg-amber-950/90 border-amber-500 text-amber-200 shadow-md ring-1 ring-amber-500 scale-[1.02]'
+                                : 'bg-[#161720] border-stone-800 text-stone-400 hover:border-stone-700 hover:text-stone-200'
+                            }`}
+                          >
+                            <IconComp className={`w-5 h-5 ${isSelected ? 'text-amber-400' : 'text-stone-400'}`} />
+                            <span className="text-[10px] font-cinzel font-semibold truncate w-full">{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Option B: Custom Image Upload */}
+                {adminSettingsForm.logoType === 'custom' && (
+                  <div className="space-y-3 pt-1 animate-in fade-in bg-[#161720] border border-stone-800 rounded-2xl p-4">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div>
+                        <span className="block text-xs font-cinzel font-bold text-stone-200">
+                          Imagen Personalizada de la Marca
+                        </span>
+                        <span className="text-[11px] text-stone-400 block">
+                          Formatos recomendados: PNG o JPG con fondo transparente o cuadrado de alto contraste.
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => logoFileInputRef.current?.click()}
+                        className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-cinzel font-bold text-xs shadow transition flex items-center gap-2 shrink-0"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        {adminSettingsForm.customLogoUrl ? 'Cambiar Imagen JPG/PNG' : 'Seleccionar Archivo JPG/PNG'}
+                      </button>
+                    </div>
+
+                    {adminSettingsForm.customLogoUrl ? (
+                      <div className="p-3 bg-[#121316] border border-stone-800 rounded-xl flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={adminSettingsForm.customLogoUrl}
+                            alt="Custom Logo Preview"
+                            className="w-12 h-12 rounded-xl object-cover border border-purple-500/80 shadow"
+                          />
+                          <div>
+                            <span className="text-xs font-cinzel font-bold text-purple-300 block">
+                              Imagen Personalizada Cargada
+                            </span>
+                            <span className="text-[10px] text-stone-500 font-mono block">
+                              data:image/... ({Math.round(adminSettingsForm.customLogoUrl.length / 1024)} KB)
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAdminSettingsForm({
+                              ...adminSettingsForm,
+                              logoType: 'icon',
+                              customLogoUrl: undefined,
+                            })
+                          }
+                          className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-red-950 hover:text-red-300 text-stone-400 text-xs font-cinzel transition border border-stone-700"
+                        >
+                          Quitar Imagen
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        onClick={() => logoFileInputRef.current?.click()}
+                        className="p-6 border-2 border-dashed border-stone-700 hover:border-purple-500 rounded-xl text-center cursor-pointer transition bg-[#121316]"
+                      >
+                        <Upload className="w-8 h-8 text-stone-500 mx-auto mb-2" />
+                        <span className="text-xs font-cinzel font-bold text-stone-300 block">
+                          Haz clic aquí para seleccionar tu imagen JPG o PNG
+                        </span>
+                        <span className="text-[10px] text-stone-500 block mt-0.5">
+                          Formatos aceptados: PNG, JPG, JPEG, WEBP, GIF, SVG
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Gemini Models Selection (Only Gemini Flash Light Latest & Gemini Flash Latest + Manual custom option) */}
@@ -2529,6 +3479,298 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                 Confirmar Eliminación
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL: ADMIN MANAGE USER PASSWORD                                   */}
+      {/* =================================================================== */}
+      {adminManagingUserPassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-md bg-[#181922] border-2 border-amber-900/80 rounded-3xl p-6 shadow-2xl text-stone-200">
+            <div className="flex items-start justify-between border-b border-stone-800 pb-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-950 border border-amber-600/70 flex items-center justify-center text-amber-300">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel font-bold text-base text-amber-300">
+                    Gestionar Contraseña
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    Usuario: <strong className="text-stone-200">{adminManagingUserPassword.displayName}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdminManagingUserPassword(null)}
+                className="p-1 rounded text-stone-400 hover:text-stone-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {adminUserPassMsg && (
+              <div className="mb-4 p-3 rounded-xl bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{adminUserPassMsg}</span>
+              </div>
+            )}
+
+            {adminManagingUserPassword.passwordResetRequested && (
+              <div className="mb-4 p-3.5 rounded-xl bg-amber-950/80 border border-amber-600/70 text-xs text-amber-200 space-y-1">
+                <div className="flex items-center gap-1.5 font-cinzel font-bold text-amber-300">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Este usuario solicitó restablecimiento</span>
+                </div>
+                {adminManagingUserPassword.passwordResetNote && (
+                  <p className="text-[11px] text-stone-300 font-sans italic">
+                    "{adminManagingUserPassword.passwordResetNote}"
+                  </p>
+                )}
+              </div>
+            )}
+
+            <form onSubmit={handleAdminUpdateUserPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                  Contraseña Actual del Usuario
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type={showRevealedPassword ? 'text' : 'password'}
+                    readOnly
+                    value={adminManagingUserPassword.password || '(Sin registrar)'}
+                    className="w-full bg-[#121316] border border-stone-800 rounded-xl px-3.5 py-2.5 text-stone-300 text-sm font-mono pr-10 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRevealedPassword((prev) => !prev)}
+                    className="absolute right-3 text-stone-400 hover:text-amber-300 transition"
+                    title={showRevealedPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+                  >
+                    {showRevealedPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-stone-500 mt-1">
+                  Puedes ver la contraseña actual para entregársela al usuario si se le olvidó.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                  Asignar Nueva Contraseña
+                </label>
+                <input
+                  type="text"
+                  value={adminUserNewPassword}
+                  onChange={(e) => setAdminUserNewPassword(e.target.value)}
+                  placeholder="Escribe la nueva contraseña..."
+                  required
+                  className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => setAdminManagingUserPassword(null)}
+                  className="px-4 py-2 rounded-xl text-xs text-stone-400 hover:text-stone-200"
+                >
+                  Cerrar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAdminSavingUserPassword}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  {isAdminSavingUserPassword ? 'Guardando...' : 'Guardar Nueva Contraseña'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL: ADMIN INJECT PLAYER SHEET OR WORLD SHEET TO USER             */}
+      {/* =================================================================== */}
+      {adminInjectingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-lg bg-[#181922] border-2 border-purple-900/80 rounded-3xl p-6 sm:p-7 shadow-2xl text-stone-200 max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-start justify-between border-b border-stone-800 pb-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-950 border border-purple-600/70 flex items-center justify-center text-purple-300">
+                  <FileUp className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel font-bold text-base text-purple-300">
+                    Inyectar Datos / Ficha a Usuario
+                  </h3>
+                  <p className="text-xs text-stone-400">
+                    Destino: <strong className="text-stone-200">{adminInjectingUser.displayName}</strong> ({adminInjectingUser.email})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdminInjectingUser(null)}
+                className="p-1 rounded text-stone-400 hover:text-stone-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {injectStatusMsg && (
+              <div className="mb-4 p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in">
+                <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{injectStatusMsg}</span>
+              </div>
+            )}
+
+            {injectErrorMsg && (
+              <div className="mb-4 p-3.5 rounded-xl bg-red-950/80 border border-red-700 text-red-300 text-xs flex items-center gap-2 animate-in fade-in">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                <span>{injectErrorMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAdminExecuteInject} className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* Type Selection: Player Sheet vs World Sheet */}
+              <div>
+                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1.5">
+                  Tipo de Elemento a Inyectar
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setInjectTargetType('player')}
+                    className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1 ${
+                      injectTargetType === 'player'
+                        ? 'bg-amber-950/80 border-amber-500 text-amber-200 shadow-md ring-1 ring-amber-500'
+                        : 'bg-[#121316] border-stone-800 text-stone-400 hover:border-stone-700'
+                    }`}
+                  >
+                    <User className="w-4 h-4 text-amber-400" />
+                    <span className="font-cinzel font-bold text-xs">Ficha de Jugador</span>
+                    <span className="text-[10px] text-stone-500">Player Sheet D&D 5E</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setInjectTargetType('world')}
+                    className={`p-3 rounded-2xl border text-center transition flex flex-col items-center justify-center gap-1 ${
+                      injectTargetType === 'world'
+                        ? 'bg-purple-950/80 border-purple-500 text-purple-200 shadow-md ring-1 ring-purple-500'
+                        : 'bg-[#121316] border-stone-800 text-stone-400 hover:border-stone-700'
+                    }`}
+                  >
+                    <Crown className="w-4 h-4 text-purple-400" />
+                    <span className="font-cinzel font-bold text-xs">World Sheet DM</span>
+                    <span className="text-[10px] text-stone-500">Pantalla & Mesa del DM</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Upload File Button & Hidden Input */}
+              <div>
+                <input
+                  type="file"
+                  ref={injectFileInputRef}
+                  accept=".json,application/json"
+                  onChange={handleInjectFileUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => injectFileInputRef.current?.click()}
+                  className="w-full py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 font-cinzel font-bold text-xs transition flex items-center justify-center gap-2"
+                >
+                  <Upload className="w-4 h-4 text-purple-400" />
+                  Cargar Archivo JSON desde mi PC
+                </button>
+              </div>
+
+              {/* Custom Title / Name */}
+              <div>
+                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                  Nombre Personalizado (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={injectCustomTitle}
+                  onChange={(e) => setInjectCustomTitle(e.target.value)}
+                  placeholder={injectTargetType === 'player' ? 'Ej. Sir Roland Restaurado' : 'Ej. Campaña El Ojo de Fuego'}
+                  className="w-full bg-[#121316] border border-stone-700 focus:border-purple-500 rounded-xl px-3 py-2 text-stone-100 text-xs outline-none"
+                />
+              </div>
+
+              {/* If World Sheet: Room Code & Password */}
+              {injectTargetType === 'world' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-cinzel font-semibold text-stone-400 mb-1">
+                      Código de Mesa (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={injectRoomCode}
+                      onChange={(e) => setInjectRoomCode(e.target.value.toUpperCase())}
+                      placeholder="MESA-RESTORE"
+                      className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono text-xs uppercase outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-cinzel font-semibold text-stone-400 mb-1">
+                      Contraseña de Mesa (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={injectRoomPassword}
+                      onChange={(e) => setInjectRoomPassword(e.target.value)}
+                      placeholder="Opcional..."
+                      className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* JSON Raw Content */}
+              <div>
+                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                  Contenido JSON de la Ficha o Mundo
+                </label>
+                <textarea
+                  rows={6}
+                  value={injectJsonContent}
+                  onChange={(e) => setInjectJsonContent(e.target.value)}
+                  placeholder="Pega aquí el objeto JSON del personaje o del World Sheet..."
+                  required
+                  className="w-full bg-[#121316] border border-stone-700 focus:border-purple-500 rounded-xl p-3 text-stone-200 font-mono text-[11px] outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => setAdminInjectingUser(null)}
+                  className="px-4 py-2 rounded-xl text-xs text-stone-400 hover:text-stone-200"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isInjectingData}
+                  className="px-6 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <FileUp className="w-3.5 h-3.5" />
+                  {isInjectingData ? 'Inyectando...' : 'Inyectar y Guardar en la Cuenta'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -92,6 +92,9 @@ export interface Character5e {
   background: string;
   alignment: string;
   avatarUrl?: string;
+  avatarType?: 'icon' | 'custom';
+  avatarCustomUrl?: string;
+  avatarIcon?: string;
 
   // Combat Stats
   maxHp: number;
@@ -401,6 +404,14 @@ export interface SharedSessionData {
 
 export type UserRole = 'player' | 'dm' | 'both' | 'moderator';
 
+export interface PlayerSheetRecord {
+  id: string;
+  ownerEmail: string;
+  name: string;
+  character: Character5e;
+  updatedAt: number;
+}
+
 export interface UserAccountPublic {
   id: string;
   email: string;
@@ -440,8 +451,10 @@ export interface HostSettings {
   moderatorPassword?: string;
   headerTitle?: string;
   headerSubtitle?: string;
-  headerLogoIcon?: string; // 'shield' | 'dragon' | 'book' | 'skull' | 'sword'
+  headerLogoIcon?: string; // 'shield' | 'dragon' | 'book' | 'skull' | 'swords' | etc.
   logoIcon?: string;
+  logoType?: 'icon' | 'custom';
+  customLogoUrl?: string; // Base64 data URL or image path for uploaded custom logo
   rejectionCustomMessage?: string;
   developerNotice?: {
     enabled: boolean;

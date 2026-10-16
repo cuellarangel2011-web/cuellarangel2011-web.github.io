@@ -226,25 +226,85 @@ apiRouter.get('/auth/me', (req, res) => {
     displayName: user.displayName,
     role: user.role,
     status: user.status,
+    passwordResetRequested: user.passwordResetRequested,
   });
+});
+
+// User self-service change password from Lobby
+apiRouter.post('/auth/change-password', (req, res) => {
+  const { email, oldPassword, newPassword } = req.body;
+  if (!email || !oldPassword || !newPassword) {
+    return res.status(400).json({ error: 'Todos los campos son requeridos.' });
+  }
+  const normEmail = email.trim().toLowerCase();
+  const user = dataStore.findUserByEmail(normEmail);
+  if (!user) {
+    return res.status(404).json({ error: 'Usuario no encontrado.' });
+  }
+  if (user.password !== oldPassword.trim()) {
+    return res.status(401).json({ error: 'La contraseña actual no es correcta.' });
+  }
+  if (newPassword.trim().length < 3) {
+    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 3 caracteres.' });
+  }
+
+  const updated = dataStore.updateUserPassword(user.id, newPassword.trim(), true);
+  res.json({ success: true, message: '¡Contraseña actualizada con éxito!' });
+});
+
+// User forgot password request
+apiRouter.post('/auth/forgot-password', (req, res) => {
+  const { email, note } = req.body;
+  if (!email || !email.trim()) {
+    return res.status(400).json({ error: 'El correo electrónico es requerido.' });
+  }
+  const normEmail = email.trim().toLowerCase();
+  const ok = dataStore.requestPasswordReset(normEmail, note);
+  if (!ok) {
+    return res.status(404).json({ error: 'No se encontró ninguna cuenta registrada con ese correo electrónico.' });
+  }
+  res.json({
+    success: true,
+    message: 'Solicitud enviada al Administrador. El moderador revisará tu cuenta y te proporcionará una nueva contraseña.',
+  });
+});
+
+// Community Feedback & Bug reports
+apiRouter.post('/feedback', (req, res) => {
+  const { category, description, userEmail, userName } = req.body;
+  if (!description || !description.trim()) {
+    return res.status(400).json({ error: 'La descripción del feedback es obligatoria.' });
+  }
+  const validCat = ['bug', 'suggestion', 'other'].includes(category) ? category : 'other';
+  const record = dataStore.addFeedback({
+    category: validCat as any,
+    description: description.trim(),
+    userEmail: userEmail?.trim() || undefined,
+    userName: userName?.trim() || undefined,
+  });
+  res.json({ success: true, feedback: record });
 });
 
 // ==========================================
 // ADMINISTRATOR ENDPOINTS
 // ==========================================
 
-// List all registered users
+// List all registered users (including current password & reset requests)
 apiRouter.get('/admin/users', (req, res) => {
   const users = dataStore.getUsers().map((u) => ({
     id: u.id,
     email: u.email,
     displayName: u.displayName,
+    password: u.password,
     role: u.role,
     status: u.status,
     registeredAt: u.registeredAt,
     approvedAt: u.approvedAt,
     approvedBy: u.approvedBy,
     lastActiveAt: u.lastActiveAt,
+    passwordResetRequested: u.passwordResetRequested,
+    passwordResetRequestedAt: u.passwordResetRequestedAt,
+    passwordResetNote: u.passwordResetNote,
   }));
   res.json({ users });
 });
@@ -272,6 +332,86 @@ apiRouter.post('/admin/users/:id/role', (req, res) => {
   const updated = dataStore.updateUserRole(req.params.id, role);
   if (!updated) return res.status(404).json({ error: 'Usuario no encontrado.' });
   res.json({ success: true, user: updated });
+});
+
+// Admin updates user password directly
+apiRouter.post('/admin/users/:id/password', (req, res) => {
+  const { newPassword } = req.body;
+  if (!newPassword || !newPassword.trim()) {
+    return res.status(400).json({ error: 'La nueva contraseña no puede estar vacía.' });
+  }
+  const updated = dataStore.updateUserPassword(req.params.id, newPassword.trim(), true);
+  if (!updated) return res.status(404).json({ error: 'Usuario no encontrado.' });
+  res.json({
+    success: true,
+    user: updated,
+    message: `Contraseña de ${updated.displayName} actualizada con éxito a: "${newPassword.trim()}".`,
+  });
+});
+
+// Admin injects Player Sheet or World Sheet to user
+apiRouter.post('/admin/users/:id/inject-sheet', (req, res) => {
+  const user = dataStore.findUserById(req.params.id);
+  if (!user) {
+    return res.status(404).json({ error: 'Usuario no encontrado.' });
+  }
+
+  const { type, data, name, roomCode, roomPassword } = req.body;
+  if (!type || !data) {
+    return res.status(400).json({ error: 'Tipo ("player" o "world") y datos JSON son requeridos.' });
+  }
+
+  if (type === 'player') {
+    // If wrapped in { character: ... }
+    const charObj = data.character || data;
+    const record = dataStore.injectPlayerSheet(user.email, charObj, name || data.name);
+    return res.json({
+      success: true,
+      type: 'player',
+      record,
+      message: `Ficha de personaje "${record.name}" inyectada con éxito a la cuenta ${user.displayName} (${user.email}).`,
+    });
+  } else if (type === 'world') {
+    // If wrapped in { workspace: ... }
+    const wsObj = data.workspace || data;
+    const record = dataStore.injectWorldSheet(
+      user.email,
+      wsObj,
+      name || data.name,
+      roomCode || data.roomCode,
+      roomPassword || data.roomPassword
+    );
+    return res.json({
+      success: true,
+      type: 'world',
+      record,
+      message: `World Sheet "${record.name}" (Mesa: ${record.roomCode}) inyectado con éxito a la cuenta ${user.displayName} (${user.email}).`,
+    });
+  } else {
+    return res.status(400).json({ error: 'Tipo inválido. Debe ser "player" o "world".' });
+  }
+});
+
+// Admin list feedback
+apiRouter.get('/admin/feedback', (req, res) => {
+  const feedback = dataStore.getFeedback();
+  res.json({ feedback });
+});
+
+// Admin delete feedback
+apiRouter.delete('/admin/feedback/:id', (req, res) => {
+  const ok = dataStore.deleteFeedback(req.params.id);
+  res.json({ success: ok });
+});
+
+// Admin update feedback status
+apiRouter.post('/admin/feedback/:id/status', (req, res) => {
+  const { status } = req.body;
+  if (status !== 'unread' && status !== 'reviewed') {
+    return res.status(400).json({ error: 'Estado inválido.' });
+  }
+  const ok = dataStore.updateFeedbackStatus(req.params.id, status);
+  res.json({ success: ok });
 });
 
 // ==========================================
@@ -523,6 +663,50 @@ apiRouter.post('/vault/sheets', (req, res) => {
   res.json({ success: true, sheetId: character.id });
 });
 
+// Give item directly to a player's character sheet from DM
+apiRouter.post('/vault/sheets/:id/give-item', (req, res) => {
+  const { item } = req.body;
+  if (!item || !item.name) {
+    return res.status(400).json({ error: 'Objeto no válido.' });
+  }
+
+  const sheets = dataStore.getPlayerSheets();
+  const sheet = sheets.find((s) => s.id === req.params.id || (s.character && s.character.id === req.params.id));
+  if (!sheet) {
+    return res.status(404).json({ error: 'Ficha de personaje no encontrada.' });
+  }
+
+  const char = sheet.character;
+  if (!Array.isArray(char.inventory)) char.inventory = [];
+  char.inventory.push(item);
+  sheet.updatedAt = Date.now();
+
+  dataStore.savePlayerSheet(sheet);
+  res.json({ success: true, message: `Objeto "${item.name}" entregado con éxito a ${char.name}.`, sheet });
+});
+
+// Give spell directly to a player's character sheet from DM
+apiRouter.post('/vault/sheets/:id/give-spell', (req, res) => {
+  const { spell } = req.body;
+  if (!spell || !spell.name) {
+    return res.status(400).json({ error: 'Conjuro no válido.' });
+  }
+
+  const sheets = dataStore.getPlayerSheets();
+  const sheet = sheets.find((s) => s.id === req.params.id || (s.character && s.character.id === req.params.id));
+  if (!sheet) {
+    return res.status(404).json({ error: 'Ficha de personaje no encontrada.' });
+  }
+
+  const char = sheet.character;
+  if (!Array.isArray(char.spells)) char.spells = [];
+  char.spells.push(spell);
+  sheet.updatedAt = Date.now();
+
+  dataStore.savePlayerSheet(sheet);
+  res.json({ success: true, message: `Conjuro "${spell.name}" entregado con éxito a ${char.name}.`, sheet });
+});
+
 // Delete Player Sheet
 apiRouter.delete('/vault/sheets/:id', (req, res) => {
   const ownerEmail = (req.query.ownerEmail as string || req.body?.ownerEmail || '').toLowerCase();
@@ -688,6 +872,15 @@ apiRouter.get('/admin/vault/backup/:charId/download', (req, res) => {
 
 // Restore / Upload Backup JSON to Server Vault
 apiRouter.post('/admin/vault/restore', (req, res) => {
+  try {
+    const result = dataStore.restoreBackup(req.body);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al restaurar respaldo.' });
+  }
+});
+
+apiRouter.post('/vault/restore-all', (req, res) => {
   try {
     const result = dataStore.restoreBackup(req.body);
     res.json(result);

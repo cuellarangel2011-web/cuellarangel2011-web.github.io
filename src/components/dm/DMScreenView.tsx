@@ -29,7 +29,10 @@ import {
   Upload,
   ArrowLeft,
   Save,
+  Edit3,
 } from 'lucide-react';
+import { EntityAvatar } from '../common/EntityAvatar';
+import { AvatarCustomizerModal } from '../common/AvatarCustomizerModal';
 import {
   DMWorkspace,
   NPCRecord,
@@ -190,6 +193,17 @@ export const DMScreenView: React.FC<DMScreenViewProps> = ({
     tags: ['Aventura'],
     folder: 'General',
   });
+
+  // Avatar Customizer Modal Config State for NPCs, Monsters, Locations & Logs
+  const [avatarCustomizerConfig, setAvatarCustomizerConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    category: 'npc' | 'monster' | 'location' | 'journal';
+    currentType?: 'icon' | 'custom';
+    currentCustomUrl?: string;
+    currentIconId?: string;
+    onSave: (data: { type: 'icon' | 'custom'; customUrl?: string; iconId?: string }) => void;
+  } | null>(null);
 
   // Active Combat Encounter references
   const activeEncounter = workspace.activeEncounter || {

@@ -1,1 +1,140 @@
-{}
+{
+  "char-1792163962817": {
+    "characterId": "char-1792163962817",
+    "ownerEmail": "deadplanter@gmail.com",
+    "characterName": "test",
+    "slots": [
+      {
+        "timestamp": 1792163962718,
+        "reason": "join",
+        "snapshot": {
+          "id": "char-1792163962817",
+          "name": "test",
+          "playerName": "Jugador",
+          "race": "Humano",
+          "characterClass": "Guerrero",
+          "level": 1,
+          "experience": 0,
+          "background": "Soldado",
+          "alignment": "Neutral Bueno",
+          "maxHp": 11,
+          "currentHp": 11,
+          "tempHp": 0,
+          "armorClass": 12,
+          "initiativeBonus": 2,
+          "speed": 30,
+          "hitDiceTotal": "1d10",
+          "hitDiceUsed": 0,
+          "deathSaves": {
+            "successes": 0,
+            "failures": 0
+          },
+          "inspiration": false,
+          "abilities": {
+            "str": {
+              "score": 15,
+              "proficientSave": true
+            },
+            "dex": {
+              "score": 14,
+              "proficientSave": false
+            },
+            "con": {
+              "score": 13,
+              "proficientSave": true
+            },
+            "int": {
+              "score": 12,
+              "proficientSave": false
+            },
+            "wis": {
+              "score": 10,
+              "proficientSave": false
+            },
+            "cha": {
+              "score": 8,
+              "proficientSave": false
+            }
+          },
+          "skills": {
+            "acrobatics": "none",
+            "animalHandling": "none",
+            "arcana": "none",
+            "athletics": "none",
+            "deception": "none",
+            "history": "none",
+            "insight": "none",
+            "intimidation": "none",
+            "investigation": "none",
+            "medicine": "none",
+            "nature": "none",
+            "perception": "none",
+            "performance": "none",
+            "persuasion": "none",
+            "religion": "none",
+            "sleightOfHand": "none",
+            "stealth": "none",
+            "survival": "none"
+          },
+          "armorProficiencies": [
+            "Todas las armaduras",
+            "Escudos"
+          ],
+          "weaponProficiencies": [
+            "Armas simples",
+            "Armas marciales"
+          ],
+          "toolProficiencies": [],
+          "languages": [
+            "Común"
+          ],
+          "attacks": [
+            {
+              "id": "atk-init-1792163962817",
+              "name": "Arma Inicial",
+              "type": "melee",
+              "attackBonus": 4,
+              "damageDice": "1d8+2",
+              "damageType": "Cortante"
+            }
+          ],
+          "spellSlots": [],
+          "spells": [],
+          "inventory": [
+            {
+              "id": "inv-pack-1792163962817",
+              "name": "Mochila de Aventurero",
+              "quantity": 1,
+              "weight": 12,
+              "category": "Equipo",
+              "description": "Raciones, odre de agua, cuerda de 50 pies, yesquero."
+            }
+          ],
+          "currency": {
+            "cp": 10,
+            "sp": 10,
+            "ep": 0,
+            "gp": 15,
+            "pp": 0
+          },
+          "featuresAndTraits": [
+            {
+              "id": "feat-1792163962817",
+              "name": "Competencias de Guerrero",
+              "source": "Clase",
+              "description": "Un maestro táctico de las armas, la disciplina militar y la supervivencia marcial."
+            }
+          ],
+          "personalityTraits": "Curioso y valiente.",
+          "ideals": "Honor: Cumplo mi palabra.",
+          "bonds": "Protejo a mis compañeros de grupo.",
+          "flaws": "A veces actúo sin pensar en el peligro.",
+          "backstory": "Comenzó su viaje para descubrir los misterios del reino.",
+          "notes": "",
+          "ownerEmail": "deadplanter@gmail.com"
+        }
+      }
+    ],
+    "lastRotatedAt": 1792163962718
+  }
+}

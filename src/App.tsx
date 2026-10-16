@@ -25,6 +25,9 @@ import {
   Layers,
   ArrowLeft,
   LayoutGrid,
+  MessageSquarePlus,
+  Bot,
+  Database,
 } from 'lucide-react';
 import {
   Character5e,
@@ -73,6 +76,8 @@ import { RoleSelectionModal } from './components/auth/RoleSelectionModal';
 import { PasswordPromptModal } from './components/auth/PasswordPromptModal';
 import { ChangelogModal } from './components/host/ChangelogModal';
 import { LobbyPortalView } from './components/lobby/LobbyPortalView';
+import { FeedbackModal } from './components/feedback/FeedbackModal';
+import { BrandLogo } from './components/common/BrandLogo';
 import { calculateProficiencyBonus, calculatePassivePerception } from './utils/dnd-math';
 import { SAMPLE_DM_WORKSPACE } from './data/srd';
 
@@ -121,6 +126,42 @@ export default function App() {
   const [isOracleOpen, setIsOracleOpen] = useState<boolean>(false);
   const [oracleInitialPrompt, setOracleInitialPrompt] = useState<string>('');
   const [isRollFeedOpen, setIsRollFeedOpen] = useState<boolean>(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState<boolean>(false);
+
+  // App Total Backup Restore
+  const appRestoreFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isAppRestoring, setIsAppRestoring] = useState<boolean>(false);
+  const [appRestoreMsg, setAppRestoreMsg] = useState<string>('');
+
+  const handleAppRestoreBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsAppRestoring(true);
+    setAppRestoreMsg('');
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const res = await fetch('/api/vault/restore-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(json),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al restaurar respaldo.');
+      setAppRestoreMsg(data.message || '¡Respaldo Maestro Restaurado con Éxito!');
+      fetch('/api/settings')
+        .then((r) => r.json())
+        .then((d) => {
+          if (d) setHostSettings(d);
+        })
+        .catch(() => {});
+    } catch (err: any) {
+      alert('Error al restaurar respaldo: ' + err.message);
+    } finally {
+      setIsAppRestoring(false);
+      if (e.target) e.target.value = '';
+    }
+  };
 
   // Dice Roller State
   const [isRollerOpen, setIsRollerOpen] = useState<boolean>(false);
@@ -773,9 +814,7 @@ export default function App() {
               onClick={() => setAppView('lobby')}
               className="flex items-center gap-2.5 text-left group transition"
             >
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-600 to-amber-950 border border-amber-500/80 shadow flex items-center justify-center text-amber-200 group-hover:scale-105 transition">
-                <Shield className="w-5 h-5" />
-              </div>
+              <BrandLogo hostSettings={hostSettings} size="md" className="group-hover:scale-105 transition" />
               <div>
                 <span className="font-cinzel font-black text-lg text-amber-300 tracking-wider block leading-tight group-hover:text-amber-200 transition">
                   {hostSettings.headerTitle || 'WeRoll'}
@@ -842,6 +881,16 @@ export default function App() {
             >
               <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
               <span className="hidden sm:inline">Oráculo IA</span>
+            </button>
+
+            {/* Community Feedback Button */}
+            <button
+              onClick={() => setIsFeedbackOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-950/70 hover:bg-amber-900 border border-amber-700/60 text-amber-200 text-xs font-cinzel font-bold transition shadow"
+              title="Enviar feedback, sugerencias o reportar un bug"
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5 text-amber-400" />
+              <span>Feedback</span>
             </button>
 
             {/* Updates Blog */}
@@ -1041,6 +1090,71 @@ export default function App() {
         )}
       </main>
 
+      {/* Persistent AI Assistant Reference & Total Backup Banner (Admin/Moderator Only) */}
+      {(authUser?.role === 'moderator' || userRole === 'moderator') && (
+        <footer className="max-w-7xl mx-auto px-4 pb-8 w-full">
+          <div className="bg-[#121316] border border-stone-800/90 rounded-2xl p-4 shadow-xl text-stone-300">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center text-cyan-300 shrink-0 shadow-inner">
+                  <Bot className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="font-cinzel font-bold text-xs text-cyan-300 flex items-center gap-2">
+                    <span>Asistente de Desarrollo WeRoll AI</span>
+                    <span className="px-2 py-0.5 rounded text-[10px] bg-cyan-950 text-cyan-200 border border-cyan-700 font-mono">
+                      Sincronización Total Activa
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-stone-400 mt-0.5 leading-relaxed">
+                    Cualquier modificación en la web (logo personalizado de la marca, avatares/iconos de personajes, NPCs, monstruos, objetos, World Sheets, contraseñas, roles, sugerencias y ajustes del servidor) está resguardada en la base de datos y 100% garantizada dentro del <strong>Respaldo Total JSON</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 shrink-0">
+                <input
+                  type="file"
+                  ref={appRestoreFileInputRef}
+                  onChange={handleAppRestoreBackup}
+                  accept=".json,application/json"
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => appRestoreFileInputRef.current?.click()}
+                  disabled={isAppRestoring}
+                  className="px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-1.5 disabled:opacity-50"
+                  title="Importa y restaura un archivo JSON de respaldo total"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{isAppRestoring ? 'Restaurando...' : 'Importar Respaldo Total'}</span>
+                </button>
+
+                <a
+                  href="/api/vault/backup-all"
+                  download
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-1.5"
+                  title="Descarga el archivo JSON completo de la base de datos"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Descargar Respaldo Total</span>
+                </a>
+              </div>
+            </div>
+
+            {appRestoreMsg && (
+              <div className="mt-3 p-2.5 rounded-xl bg-emerald-950 border border-emerald-600 text-emerald-200 text-xs flex items-center justify-between">
+                <span>{appRestoreMsg}</span>
+                <button onClick={() => setAppRestoreMsg('')} className="p-1 text-emerald-400 hover:text-white">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        </footer>
+      )}
+
       {/* =================================================================== */}
       {/* GLOBAL MODALS                                                       */}
       {/* =================================================================== */}
@@ -1090,6 +1204,7 @@ export default function App() {
           onClose={() => setIsRoleModalOpen(false)}
           dmPasswordExpected={hostSettings.dmPassword || ''}
           moderatorPasswordExpected={hostSettings.moderatorPassword || 'admin'}
+          hostSettings={hostSettings}
           onSelectRole={handleSelectRole}
         />
       )}
@@ -1171,6 +1286,15 @@ export default function App() {
               : authUser?.displayName || 'Aventurero'
           }
           onRollComplete={handleRollComplete}
+        />
+      )}
+
+      {/* Community Feedback Modal */}
+      {isFeedbackOpen && (
+        <FeedbackModal
+          isOpen={isFeedbackOpen}
+          onClose={() => setIsFeedbackOpen(false)}
+          authUser={authUser}
         />
       )}
     </div>

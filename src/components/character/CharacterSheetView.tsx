@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   Edit2,
+  Edit3,
   Lock,
   Unlock,
   Upload,
@@ -25,6 +26,8 @@ import {
   Cloud,
   Coins,
 } from 'lucide-react';
+import { EntityAvatar } from '../common/EntityAvatar';
+import { AvatarCustomizerModal } from '../common/AvatarCustomizerModal';
 import {
   Character5e,
   AbilityKey,
@@ -72,6 +75,7 @@ export const CharacterSheetView: React.FC<CharacterSheetViewProps> = ({
   const [hpChangeAmount, setHpChangeAmount] = useState<number>(1);
   const [showHpModal, setShowHpModal] = useState<boolean>(false);
   const [hpModalMode, setHpModalMode] = useState<'heal' | 'damage' | 'temp'>('damage');
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState<boolean>(false);
 
   // Modals for Adding / Editing Attacks
   const [editingAttack, setEditingAttack] = useState<AttackAction | null>(null);
@@ -337,17 +341,24 @@ export const CharacterSheetView: React.FC<CharacterSheetViewProps> = ({
 
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
           <div className="flex items-center gap-4">
-            {character.avatarUrl ? (
-              <img
-                src={character.avatarUrl}
-                alt={character.name}
-                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-amber-600/70 shadow-lg"
+            <div
+              className={`relative group ${!isLocked ? 'cursor-pointer' : ''}`}
+              onClick={() => !isLocked && setIsAvatarModalOpen(true)}
+              title={!isLocked ? 'Haz clic para cambiar la ilustración o el icono del personaje' : undefined}
+            >
+              <EntityAvatar
+                avatarType={character.avatarType || (character.avatarUrl ? 'custom' : 'icon')}
+                customUrl={character.avatarCustomUrl || character.avatarUrl}
+                iconId={character.avatarIcon || 'anonymous'}
+                size="2xl"
+                className="group-hover:border-amber-400 transition shadow-xl"
               />
-            ) : (
-              <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-amber-950/80 border-2 border-amber-600/50 flex items-center justify-center text-amber-400 font-cinzel font-bold text-2xl">
-                {character.name.charAt(0)}
-              </div>
-            )}
+              {!isLocked && (
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 rounded-3xl flex items-center justify-center transition text-amber-300">
+                  <Edit3 className="w-6 h-6" />
+                </div>
+              )}
+            </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h1 className="text-2xl sm:text-3xl font-bold font-cinzel text-amber-200 tracking-wide">
@@ -1902,6 +1913,28 @@ export const CharacterSheetView: React.FC<CharacterSheetViewProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Avatar Customizer Modal */}
+      {isAvatarModalOpen && (
+        <AvatarCustomizerModal
+          isOpen={isAvatarModalOpen}
+          onClose={() => setIsAvatarModalOpen(false)}
+          title={`Icono / Avatar de ${character.name}`}
+          currentType={character.avatarType || (character.avatarUrl ? 'custom' : 'icon')}
+          currentCustomUrl={character.avatarCustomUrl || character.avatarUrl}
+          currentIconId={character.avatarIcon || 'anonymous'}
+          category="player"
+          onSave={(data) => {
+            onUpdateCharacter({
+              ...character,
+              avatarType: data.type,
+              avatarCustomUrl: data.customUrl,
+              avatarUrl: data.customUrl,
+              avatarIcon: data.iconId,
+            });
+          }}
+        />
       )}
     </div>
   );
