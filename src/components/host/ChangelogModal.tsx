@@ -17,8 +17,12 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  // Show up to the current version and recent versions
-  const sortedEntries = [...(changelog || [])].reverse();
+  // Show latest version at top
+  const sortedEntries = [...(changelog || [])].sort((a, b) => {
+    const vA = parseFloat(a.version) || 0;
+    const vB = parseFloat(b.version) || 0;
+    return vB - vA;
+  });
 
   return (
     <div

@@ -34,6 +34,8 @@ import {
   Tag,
   FileUp,
   RotateCcw,
+  Save,
+  Bell,
 } from 'lucide-react';
 import {
   Character5e,
@@ -164,6 +166,35 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
   const [changelogFormTitle, setChangelogFormTitle] = useState<string>('');
   const [changelogFormDate, setChangelogFormDate] = useState<string>('');
   const [changelogFormChanges, setChangelogFormChanges] = useState<string>('');
+
+  // Admin Greeting / Maintenance Notice state
+  const [dismissedGreeting, setDismissedGreeting] = useState<boolean>(false);
+  const [greetingEnabled, setGreetingEnabled] = useState<boolean>(hostSettings.adminGreeting?.enabled ?? true);
+  const [greetingTitle, setGreetingTitle] = useState<string>(
+    hostSettings.adminGreeting?.title || 'Comunicado del Administrador'
+  );
+  const [greetingMessage, setGreetingMessage] = useState<string>(
+    hostSettings.adminGreeting?.message ||
+      '¡Bienvenido a WeRoll 5E! El sistema ahora cuenta con sincronización global en tiempo real y bóveda segura en la nube.'
+  );
+  const [greetingType, setGreetingType] = useState<'info' | 'maintenance' | 'alert'>(
+    hostSettings.adminGreeting?.type || 'info'
+  );
+  const [greetingSaveStatus, setGreetingSaveStatus] = useState<string>('');
+
+  // Sync state when hostSettings updates in real-time from server across devices
+  useEffect(() => {
+    setAdminSettingsForm(hostSettings);
+    if (hostSettings.adminGreeting) {
+      setGreetingEnabled(hostSettings.adminGreeting.enabled);
+      setGreetingTitle(hostSettings.adminGreeting.title || '');
+      setGreetingMessage(hostSettings.adminGreeting.message || '');
+      setGreetingType(hostSettings.adminGreeting.type || 'info');
+    }
+    if (hostSettings.changelog) {
+      setChangelogList(hostSettings.changelog);
+    }
+  }, [hostSettings]);
 
   // Player Characters filtered by account
   const [playerSheets, setPlayerSheets] = useState<Character5e[]>([]);
@@ -525,13 +556,111 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
     }
   };
 
+  const handleSaveAdminGreeting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGreetingSaveStatus('');
+    try {
+      const updated: HostSettings = {
+        ...hostSettings,
+        adminGreeting: {
+          enabled: greetingEnabled,
+          title: greetingTitle.trim() || 'Comunicado del Administrador',
+          message: greetingMessage.trim(),
+          type: greetingType,
+          updatedAt: Date.now(),
+        },
+      };
+      await onSaveHostSettings(updated);
+      setGreetingSaveStatus('¡Aviso del Administrador guardado y transmitido a todas las instancias!');
+      setTimeout(() => setGreetingSaveStatus(''), 4000);
+    } catch (err) {
+      setGreetingSaveStatus('Error al guardar saludo en el servidor.');
+    }
+  };
+
+  const renderAdminGreetingBanner = () => {
+    if (!hostSettings.adminGreeting?.enabled || !hostSettings.adminGreeting?.message || dismissedGreeting) {
+      return null;
+    }
+    const type = hostSettings.adminGreeting.type || 'info';
+    const isMaintenance = type === 'maintenance';
+    const isAlert = type === 'alert';
+
+    return (
+      <div
+        className={`w-full rounded-2xl p-4.5 border shadow-xl flex items-start justify-between gap-4 animate-in fade-in transition ${
+          isMaintenance
+            ? 'bg-gradient-to-r from-amber-950/90 via-stone-900 to-amber-950/90 border-amber-500/80 text-amber-200'
+            : isAlert
+            ? 'bg-gradient-to-r from-red-950/90 via-stone-900 to-red-950/90 border-red-500/80 text-red-200'
+            : 'bg-gradient-to-r from-blue-950/90 via-stone-900 to-purple-950/90 border-blue-500/70 text-blue-200'
+        }`}
+      >
+        <div className="flex items-start gap-3.5">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 border shadow ${
+              isMaintenance
+                ? 'bg-amber-900/60 border-amber-400 text-amber-300'
+                : isAlert
+                ? 'bg-red-900/60 border-red-400 text-red-300'
+                : 'bg-blue-900/60 border-blue-400 text-blue-300'
+            }`}
+          >
+            {isMaintenance ? (
+              <Clock className="w-5 h-5 animate-pulse" />
+            ) : isAlert ? (
+              <AlertCircle className="w-5 h-5 animate-bounce" />
+            ) : (
+              <Crown className="w-5 h-5" />
+            )}
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-[10px] font-cinzel font-bold uppercase tracking-wider border ${
+                  isMaintenance
+                    ? 'bg-amber-950 border-amber-500 text-amber-300'
+                    : isAlert
+                    ? 'bg-red-950 border-red-500 text-red-300'
+                    : 'bg-blue-950 border-blue-500 text-blue-300'
+                }`}
+              >
+                {isMaintenance
+                  ? 'Mantenimiento del Servidor'
+                  : isAlert
+                  ? 'Alerta Prioritaria'
+                  : 'Aviso Oficial del Administrador'}
+              </span>
+              <h4 className="font-cinzel font-bold text-sm text-stone-100">
+                {hostSettings.adminGreeting.title || 'Comunicado Oficial'}
+              </h4>
+            </div>
+            <p className="text-xs text-stone-300 leading-relaxed font-sans">
+              {hostSettings.adminGreeting.message}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setDismissedGreeting(true)}
+          className="p-1 rounded-lg text-stone-400 hover:text-stone-100 hover:bg-stone-800/60 transition"
+          title="Ocultar notificación"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  };
+
   // ==========================================
   // VIEW: NOT LOGGED IN / GUEST SCREEN
   // ==========================================
   if (!authUser) {
     return (
-      <div className="min-h-[85vh] flex flex-col items-center justify-center p-4">
-        <div className="max-w-xl w-full bg-[#16171d] border-2 border-amber-900/60 rounded-3xl p-8 sm:p-10 shadow-2xl text-center relative overflow-hidden animate-in fade-in zoom-in-95">
+      <div className="min-h-[85vh] flex flex-col items-center justify-center p-4 space-y-5 max-w-xl mx-auto w-full">
+        {/* Admin Greeting Notification Banner */}
+        {renderAdminGreetingBanner()}
+
+        <div className="w-full bg-[#16171d] border-2 border-amber-900/60 rounded-3xl p-8 sm:p-10 shadow-2xl text-center relative overflow-hidden animate-in fade-in zoom-in-95">
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-600 via-purple-600 to-amber-600" />
 
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-gradient-to-br from-amber-600 to-amber-950 border border-amber-500/80 shadow-xl text-amber-200 mb-6">
@@ -542,7 +671,7 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
             {hostSettings.headerTitle || 'WeRoll 5E'}
           </h1>
           <p className="text-xs text-stone-400 mt-2 uppercase tracking-widest font-cinzel">
-            {hostSettings.headerSubtitle || 'Companion & DM Suite v0.1'}
+            {hostSettings.headerSubtitle || 'Companion & DM Suite v0.4'}
           </p>
 
           <p className="text-sm text-stone-300 mt-6 leading-relaxed max-w-md mx-auto">
@@ -579,8 +708,10 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
   // ==========================================
   if (authUser.status === 'pending') {
     return (
-      <div className="min-h-[85vh] flex flex-col items-center justify-center p-4">
-        <div className="max-w-lg w-full bg-[#181920] border-2 border-amber-700/60 rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden animate-in fade-in">
+      <div className="min-h-[85vh] flex flex-col items-center justify-center p-4 space-y-5 max-w-lg mx-auto w-full">
+        {renderAdminGreetingBanner()}
+
+        <div className="w-full bg-[#181920] border-2 border-amber-700/60 rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden animate-in fade-in">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-950/80 border border-amber-500/80 text-amber-300 mb-5 shadow-lg">
             <Clock className="w-8 h-8 animate-pulse" />
           </div>
@@ -688,7 +819,7 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                 {hostSettings.headerTitle || 'WeRoll 5E'}
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-950 border border-amber-700 text-amber-300">
-                {hostSettings.headerSubtitle || 'Suite v0.1'}
+                {hostSettings.headerSubtitle || 'Suite v0.4'}
               </span>
               <button
                 onClick={onOpenChangelog}
@@ -737,6 +868,9 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Admin Greeting / Maintenance Notification Banner */}
+      {renderAdminGreetingBanner()}
 
       {/* Lobby Navigation Tabs */}
       <div className="flex items-center gap-3 border-b border-stone-800 pb-2">
@@ -1558,29 +1692,125 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
           )}
 
           {/* =================================================================== */}
-          {/* SUB-TAB 3: BLOG DE NOVEDADES Y VERSIONES (CHANGELOG)                 */}
+          {/* SUB-TAB 3: BLOG DE NOVEDADES Y VERSIONES (CHANGELOG & AVISOS)       */}
           {/* =================================================================== */}
           {adminSubTab === 'updates' && (
-            <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-5">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-800 pb-4">
-                <div>
-                  <h3 className="font-cinzel font-bold text-base text-stone-100 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-400" />
-                    Administrador de Novedades y Registro de Versiones
-                  </h3>
-                  <p className="text-xs text-stone-400 mt-0.5">
-                    Publica nuevas versiones, edita las notas de versiones anteriores o elimínalas del registro público.
-                  </p>
+            <div className="space-y-6">
+              {/* 1. SECCIÓN EXCLUSIVA DE ADMINISTRADOR: SALUDO Y AVISO DE MANTENIMIENTO EN EL LOBBY */}
+              <form
+                onSubmit={handleSaveAdminGreeting}
+                className="bg-[#161720] border-2 border-amber-600/50 rounded-3xl p-6 shadow-xl space-y-4 animate-in fade-in"
+              >
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-800 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-950 border border-amber-500/80 flex items-center justify-center text-amber-300 shrink-0">
+                      <Bell className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-cinzel font-bold text-base text-amber-300 flex items-center gap-2">
+                        Saludo Personalizado del Administrador (Aviso en el Lobby)
+                      </h3>
+                      <p className="text-xs text-stone-400 mt-0.5">
+                        Este aviso se muestra en el Lobby a todos los usuarios como un mensaje de notificación. Modifícalo aquí para anunciar mantenimientos, eventos o comunicados oficiales.
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="flex items-center gap-2 cursor-pointer bg-[#121316] hover:bg-stone-800 px-4 py-2 rounded-xl border border-stone-700 transition">
+                    <input
+                      type="checkbox"
+                      checked={greetingEnabled}
+                      onChange={(e) => setGreetingEnabled(e.target.checked)}
+                      className="accent-amber-500 w-4 h-4 rounded cursor-pointer"
+                    />
+                    <span className="text-xs font-cinzel font-bold text-stone-200">
+                      Activar Notificación en Lobby
+                    </span>
+                  </label>
                 </div>
 
-                <button
-                  onClick={handleOpenNewChangelogModal}
-                  className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Publicar Nueva Actualización
-                </button>
-              </div>
+                {greetingSaveStatus && (
+                  <div className="p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-xs flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                    <span>{greetingSaveStatus}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                      Título del Saludo o Aviso
+                    </label>
+                    <input
+                      type="text"
+                      value={greetingTitle}
+                      onChange={(e) => setGreetingTitle(e.target.value)}
+                      placeholder="Ej: Mantenimiento programado hoy a las 23:00 hrs"
+                      className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3.5 py-2.5 text-stone-100 text-xs outline-none focus:border-amber-500 transition"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                      Tipo de Notificación
+                    </label>
+                    <select
+                      value={greetingType}
+                      onChange={(e) => setGreetingType(e.target.value as any)}
+                      className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3.5 py-2.5 text-stone-100 text-xs outline-none focus:border-amber-500 transition"
+                    >
+                      <option value="info">🔵 Informativo / General</option>
+                      <option value="maintenance">🟡 Mantenimiento Programado</option>
+                      <option value="alert">🔴 Alerta de Sistema</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                    Mensaje / Detalles del Comunicado
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={greetingMessage}
+                    onChange={(e) => setGreetingMessage(e.target.value)}
+                    placeholder="Escribe aquí el saludo, instrucciones o la duración estimada del mantenimiento..."
+                    className="w-full bg-[#121316] border border-stone-700 rounded-xl p-3.5 text-stone-100 text-xs outline-none focus:border-amber-500 resize-none transition"
+                  />
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    Guardar Saludo y Transmitir a Todas las Instancias
+                  </button>
+                </div>
+              </form>
+
+              {/* 2. REGISTRO HISTÓRICO DE VERSIONES & MEJORAS */}
+              <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-5">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-800 pb-4">
+                  <div>
+                    <h3 className="font-cinzel font-bold text-base text-stone-100 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      Blog de Novedades y Registro de Versiones
+                    </h3>
+                    <p className="text-xs text-stone-400 mt-0.5">
+                      Publica nuevas versiones, edita las notas de versiones anteriores o elimínalas del registro público.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleOpenNewChangelogModal}
+                    className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Publicar Nueva Actualización
+                  </button>
+                </div>
 
               {changelogList.length === 0 ? (
                 <p className="text-xs text-stone-500 py-6 text-center">No hay entradas de actualización en el blog.</p>
@@ -1635,6 +1865,7 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                   ))}
                 </div>
               )}
+              </div>
             </div>
           )}
 

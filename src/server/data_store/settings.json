@@ -1,31 +1,67 @@
 {
   "headerTitle": "WeRoll",
-  "headerSubtitle": "Companion & DM Suite v0.1",
+  "headerSubtitle": "Companion & DM Suite v0.4",
   "headerLogoIcon": "shield",
   "aiModel": "gemini-flash-lite-latest",
   "moderatorPassword": "admin",
   "dmPassword": "",
   "oracleWelcomeMessage": "Saludos, viajero. Soy el Sabio Arcano, tu árbitro y custodio de las reglas de 5E. ¿Qué duda deseas resolver hoy?",
+  "rejectionCustomMessage": "Lo lamentamos, por el momento no puedes acceder a WeRoll. Manda mensaje a soporte@weroll.app si quieres una revisión manual de tu caso.",
+  "adminGreeting": {
+    "enabled": true,
+    "title": "Comunicado del Administrador",
+    "message": "¡Bienvenido a WeRoll 5E! El sistema ahora cuenta con sincronización global en tiempo real y bóveda segura en la nube.",
+    "type": "info",
+    "updatedAt": 1792162668983
+  },
   "developerNotice": {
     "enabled": true,
-    "title": "WeRoll • Actualizaciones v0.1",
-    "content": "Bienvenido a WeRoll v0.1. Se ha implementado el Hub de partidas, salas con contraseña del DM, aprobación de usuarios, estados de actividad AFK, respaldos rotativos en servidor y borrador IA relacional.",
-    "version": "0.1"
+    "title": "WeRoll • Novedades v0.4",
+    "content": "Sincronización en tiempo real de credenciales maestras, modelo IA, avisos del administrador en Lobby y bóveda persistente en la nube.",
+    "version": "0.4"
   },
   "changelog": [
     {
+      "version": "0.4",
+      "date": "2026-10-16",
+      "title": "Sincronización Global en la Nube, Avisos de Mantenimiento & Flujo de Acceso",
+      "changes": [
+        "Sincronización instantánea de credenciales maestras de administrador, modelo Gemini y API Key en todas las instancias.",
+        "Saludo personalizado y avisos prioritarios del Administrador en el Lobby para anuncios y mantenimiento del servidor.",
+        "Flujo de acceso renovado: Entrada directa con correo/contraseña y registro con selección de perfil de acceso.",
+        "Persistencia automática en la nube de la gestión de cuentas, roles y bóveda de copias de seguridad."
+      ]
+    },
+    {
+      "version": "0.3",
+      "date": "2026-10-16",
+      "title": "Portal Lobby Centralizado, Pantallas de DM (World Sheets) & Salas con Clave",
+      "changes": [
+        "Portal Lobby inicial con segmentación estricta por cuenta de usuario y roles asignados.",
+        "World Sheets independientes para el Dungeon Master con reinicio completo de carpetas y hasta 3 por cuenta.",
+        "Botón de guardado en la nube y regreso al lobby tanto para el DM como para los jugadores.",
+        "Mesas de juego con contraseña establecida por el DM que dejan de existir al cerrar partida."
+      ]
+    },
+    {
+      "version": "0.2",
+      "date": "2026-10-16",
+      "title": "Bloc de Combate, Borrador IA Relacional & Compendio de Monstruos",
+      "changes": [
+        "Control de iniciativa y combate en vivo con botón para reiniciar iniciativa y rondas.",
+        "Borrador con Inteligencia Artificial relacional para vincular NPCs, lugares y enemigos.",
+        "Edición dinámica de ataques cuerpo a cuerpo, a distancia y conjuros para monstruos SRD.",
+        "Respaldos automáticos rotativos de 2 versiones por jugador en el servidor."
+      ]
+    },
+    {
       "version": "0.1",
       "date": "2026-10-16",
-      "title": "Lanzamiento WeRoll v0.1: Suite Completa & Bóveda de Servidor",
+      "title": "Lanzamiento Inicial de WeRoll 5E Companion & DM Suite",
       "changes": [
-        "Hub visual de selección de World Sheets (DM) y Player Sheets (Jugador).",
-        "Salas de juego protegidas por contraseña configurada por el DM.",
-        "Sistema de registro de usuarios con preaprobación del Administrador.",
-        "Monitoreo de actividad en 4 estados: Activo, Pausa, Pensando y AFK.",
-        "Respaldos rotativos de 2 versiones por jugador en el servidor.",
-        "Bóveda del servidor con descargas JSON individuales y respaldo total.",
-        "Borrador IA relacional para vincular NPCs, lugares y monstruos.",
-        "Manual SRD 5E completo con compendio de objetos y conjuros."
+        "Fichas interactivas de personaje D&D 5E con tiradas de dados 3D y reglas SRD.",
+        "Pantalla del Dungeon Master y asistente de Sabio Arcano con IA de Google Gemini.",
+        "Bóveda del servidor para descargas y respaldos completos en formato JSON."
       ]
     }
   ]

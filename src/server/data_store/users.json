@@ -9,17 +9,17 @@
     "registeredAt": 1792150571904,
     "approvedAt": 1792150571904,
     "approvedBy": "SYSTEM",
-    "lastActiveAt": 1792150571904
+    "lastActiveAt": 1792162672168
   },
   {
     "email": "deadplanter@gmail.com",
     "displayName": "deadplanter",
-    "password": "113017ar",
+    "password": "admin",
     "role": "moderator",
     "status": "approved",
     "id": "usr-1792151610888-qun0v",
     "registeredAt": 1792151610888,
-    "lastActiveAt": 1792152151849,
+    "lastActiveAt": 1792162370497,
     "approvedAt": 1792152126641,
     "approvedBy": "Admin"
   },

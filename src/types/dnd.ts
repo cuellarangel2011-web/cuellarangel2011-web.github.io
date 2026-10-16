@@ -460,6 +460,7 @@ export interface HostSettings {
     enabled: boolean;
     title: string;
     message: string;
+    type?: 'info' | 'maintenance' | 'alert';
     updatedAt?: number;
   };
   changelog?: ChangelogEntry[];
