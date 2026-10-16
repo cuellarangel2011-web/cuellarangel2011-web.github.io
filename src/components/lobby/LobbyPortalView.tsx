@@ -42,6 +42,10 @@ import {
   Bug,
   Lightbulb,
   Mail,
+  Send,
+  GitBranch,
+  HardDrive,
+  Webhook,
 } from 'lucide-react';
 import {
   Character5e,
@@ -50,6 +54,7 @@ import {
   UserRole,
   WorldSheetSummary,
   ChangelogEntry,
+  AutoBackupLog,
 } from '../../types/dnd';
 import { AuthSessionUser } from '../auth/RoleSelectionModal';
 import { SAMPLE_CHARACTER, SAMPLE_DM_WORKSPACE } from '../../data/srd';
@@ -137,11 +142,42 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
   const [worldToDelete, setWorldToDelete] = useState<WorldSheetSummary | null>(null);
 
   // Admin state
-  const [adminSubTab, setAdminSubTab] = useState<'users' | 'vault' | 'updates' | 'settings'>('users');
+  const [adminSubTab, setAdminSubTab] = useState<'users' | 'vault' | 'autobackup' | 'updates' | 'settings'>('users');
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
   const [adminSettingsForm, setAdminSettingsForm] = useState<HostSettings>(hostSettings);
   const [adminSaveMessage, setAdminSaveMessage] = useState<string>('');
+
+  // Auto Backup Test State
+  const [autoBackupTestLoading, setAutoBackupTestLoading] = useState<boolean>(false);
+  const [autoBackupTestMsg, setAutoBackupTestMsg] = useState<string>('');
+  const [autoBackupTestError, setAutoBackupTestError] = useState<string>('');
+
+  const handleRunAutoBackupTestInLobby = async () => {
+    setAutoBackupTestLoading(true);
+    setAutoBackupTestMsg('');
+    setAutoBackupTestError('');
+    try {
+      const cfg = adminSettingsForm.autoBackup || {
+        enabled: false,
+        frequencyHours: 24,
+        destination: 'drive',
+      };
+      const res = await fetch('/api/admin/vault/trigger-autobackup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: cfg }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al ejecutar respaldo.');
+      setAutoBackupTestMsg(data.message || '¡Respaldo enviado exitosamente a la nube!');
+      fetchVaultDetails();
+    } catch (err: any) {
+      setAutoBackupTestError(err.message || 'Error al conectar con el servidor.');
+    } finally {
+      setAutoBackupTestLoading(false);
+    }
+  };
 
   // AI Model selector state
   const isPresetModel =
@@ -1768,6 +1804,18 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
             </button>
 
             <button
+              onClick={() => setAdminSubTab('autobackup')}
+              className={`px-4 py-2 rounded-xl font-cinzel font-bold text-xs transition flex items-center gap-2 shrink-0 ${
+                adminSubTab === 'autobackup'
+                  ? 'bg-cyan-600 text-white shadow-md'
+                  : 'bg-stone-900 text-stone-400 hover:text-stone-200 hover:bg-stone-800'
+              }`}
+            >
+              <Clock className="w-4 h-4 text-cyan-400" />
+              ☁️ Vincular Cuentas de Respaldo (Drive / GitHub)
+            </button>
+
+            <button
               onClick={() => {
                 setAdminSubTab('updates');
                 fetchAdminChangelog();
@@ -2019,6 +2067,45 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                     ⚙️ Configuración & Avisos
                   </span>
                 </div>
+
+                {/* Auto Cloud Backup Status Bar & Manual Action */}
+                <div className="mt-3.5 p-3 rounded-xl bg-[#161722] border border-cyan-600/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <Clock className="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
+                    <div>
+                      <span className="font-cinzel font-bold text-cyan-300 block">
+                        Último Respaldo en la Nube ({hostSettings.autoBackup?.destination === 'drive' ? 'Google Drive' : hostSettings.autoBackup?.destination === 'github' ? 'GitHub Repo' : hostSettings.autoBackup?.destination === 'webhook' ? 'Webhook' : 'Sin Configurar'}):
+                      </span>
+                      <span className="text-stone-300 font-mono text-[11px]">
+                        {hostSettings.autoBackup?.lastBackupAt
+                          ? new Date(hostSettings.autoBackup.lastBackupAt).toLocaleString('es-ES', {
+                              dateStyle: 'medium',
+                              timeStyle: 'short',
+                            })
+                          : 'Aún no se ha realizado ninguna copia automática'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/admin/vault/trigger-autobackup', { method: 'POST' });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'Error al guardar.');
+                        alert(data.message || '¡Respaldo enviado a la nube exitosamente!');
+                        window.location.reload();
+                      } catch (err: any) {
+                        alert('Error en respaldo manual: ' + err.message);
+                      }
+                    }}
+                    className="px-3.5 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white font-cinzel font-bold text-xs flex items-center gap-1.5 shrink-0 shadow transition"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>⚡ Hacer Copia Manual Ahora</span>
+                  </button>
+                </div>
               </div>
 
               {/* Filter Tabs */}
@@ -2246,6 +2333,515 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* =================================================================== */}
+          {/* SUB-TAB 5: AUTOMATED BACKUPS & DRIVE / GITHUB ACCOUNT LINKING       */}
+          {/* =================================================================== */}
+          {adminSubTab === 'autobackup' && (
+            <div className="bg-[#161720] border border-cyan-800/80 rounded-3xl p-6 shadow-xl space-y-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-800 pb-4">
+                <div>
+                  <h3 className="font-cinzel font-bold text-base text-cyan-300 flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-cyan-400 animate-pulse" />
+                    Vinculación de Cuentas de Respaldo y Automatización en Nube
+                  </h3>
+                  <p className="text-xs text-stone-400 mt-1">
+                    Configura y vincula tu cuenta de Google Drive, repositorio de GitHub o Webhook para enviar automáticamente un Respaldo Maestro completo de la base de datos cada 12 o 24 horas.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAdminSaveSettings}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-400 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2 shrink-0"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Guardar Ajustes de Respaldo</span>
+                </button>
+              </div>
+
+              {/* Section 1: Activation & Schedule Frequency */}
+              <div className="bg-[#121316] border border-stone-800 rounded-2xl p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <label className="font-cinzel font-bold text-sm text-amber-300 flex items-center gap-2">
+                      <span>Estado del Servicio de Respaldo Automático</span>
+                    </label>
+                    <p className="text-xs text-stone-400 mt-0.5">
+                      Activa la casilla para programar ejecuciones periódicas en segundo plano en el servidor.
+                    </p>
+                  </div>
+
+                  <label className="inline-flex items-center gap-2.5 cursor-pointer bg-[#181924] px-4 py-2 rounded-xl border border-cyan-700/60 hover:border-cyan-500 transition">
+                    <input
+                      type="checkbox"
+                      checked={adminSettingsForm.autoBackup?.enabled ?? false}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        setAdminSettingsForm((prev) => ({
+                          ...prev,
+                          autoBackup: {
+                            enabled,
+                            frequencyHours: prev.autoBackup?.frequencyHours || 24,
+                            destination: prev.autoBackup?.destination || 'drive',
+                            githubToken: prev.autoBackup?.githubToken || '',
+                            githubRepo: prev.autoBackup?.githubRepo || '',
+                            githubPath: prev.autoBackup?.githubPath || 'backups/weroll-backup-latest.json',
+                            driveFolderId: prev.autoBackup?.driveFolderId || '',
+                            driveAccessToken: prev.autoBackup?.driveAccessToken || '',
+                            driveAccountEmail: prev.autoBackup?.driveAccountEmail || '',
+                            webhookUrl: prev.autoBackup?.webhookUrl || '',
+                            lastBackupAt: prev.autoBackup?.lastBackupAt,
+                            lastBackupStatus: prev.autoBackup?.lastBackupStatus,
+                            lastBackupMessage: prev.autoBackup?.lastBackupMessage,
+                            history: prev.autoBackup?.history || [],
+                          },
+                        }));
+                      }}
+                      className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
+                    />
+                    <span className="font-cinzel font-bold text-xs text-cyan-200">
+                      {adminSettingsForm.autoBackup?.enabled ? 'AUTOMÁTICO ACTIVADO' : 'DESACTIVADO'}
+                    </span>
+                  </label>
+                </div>
+
+                {/* Frequency selector */}
+                <div className="pt-3 border-t border-stone-800/80">
+                  <label className="block text-xs font-cinzel font-bold text-stone-300 mb-2">
+                    Frecuencia de Envío de Copia de Seguridad:
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdminSettingsForm((prev) => ({
+                          ...prev,
+                          autoBackup: {
+                            ...prev.autoBackup,
+                            enabled: prev.autoBackup?.enabled ?? false,
+                            frequencyHours: 12,
+                            destination: prev.autoBackup?.destination || 'drive',
+                          },
+                        }));
+                      }}
+                      className={`p-3 rounded-xl border text-xs font-cinzel font-bold transition flex items-center justify-center gap-2 ${
+                        (adminSettingsForm.autoBackup?.frequencyHours || 24) === 12
+                          ? 'bg-cyan-950 border-cyan-500 text-cyan-200 shadow-md ring-1 ring-cyan-500'
+                          : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                      }`}
+                    >
+                      <Clock className="w-4 h-4 text-cyan-400" />
+                      <span>Cada 12 Horas (2 veces al día)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdminSettingsForm((prev) => ({
+                          ...prev,
+                          autoBackup: {
+                            ...prev.autoBackup,
+                            enabled: prev.autoBackup?.enabled ?? false,
+                            frequencyHours: 24,
+                            destination: prev.autoBackup?.destination || 'drive',
+                          },
+                        }));
+                      }}
+                      className={`p-3 rounded-xl border text-xs font-cinzel font-bold transition flex items-center justify-center gap-2 ${
+                        (adminSettingsForm.autoBackup?.frequencyHours || 24) === 24
+                          ? 'bg-cyan-950 border-cyan-500 text-cyan-200 shadow-md ring-1 ring-cyan-500'
+                          : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                      }`}
+                    >
+                      <Clock className="w-4 h-4 text-cyan-400" />
+                      <span>Cada 24 Horas (1 vez al día)</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Destination Account Linking & Form Inputs ("Casillas") */}
+              <div className="bg-[#121316] border border-stone-800 rounded-2xl p-5 space-y-4">
+                <label className="font-cinzel font-bold text-sm text-cyan-300 block mb-1">
+                  Selecciona la Plataforma / Cuenta donde Deseas Guardar la Copia:
+                </label>
+
+                {/* Destination Selector Tabs / Buttons */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminSettingsForm((prev) => ({
+                        ...prev,
+                        autoBackup: {
+                          ...prev.autoBackup,
+                          enabled: prev.autoBackup?.enabled ?? false,
+                          frequencyHours: prev.autoBackup?.frequencyHours || 24,
+                          destination: 'drive',
+                        },
+                      }));
+                    }}
+                    className={`p-3.5 rounded-2xl border text-xs font-cinzel font-bold transition flex items-center gap-3 ${
+                      (adminSettingsForm.autoBackup?.destination || 'drive') === 'drive'
+                        ? 'bg-emerald-950/90 border-emerald-500 text-emerald-200 shadow-lg ring-1 ring-emerald-500'
+                        : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-emerald-900/50 border border-emerald-600 flex items-center justify-center text-emerald-300 shrink-0">
+                      <HardDrive className="w-4 h-4" />
+                    </div>
+                    <div className="text-left">
+                      <span className="block text-stone-100 font-bold">Google Drive</span>
+                      <span className="text-[10px] text-stone-400 font-normal">Carpeta o Nube Google</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminSettingsForm((prev) => ({
+                        ...prev,
+                        autoBackup: {
+                          ...prev.autoBackup,
+                          enabled: prev.autoBackup?.enabled ?? false,
+                          frequencyHours: prev.autoBackup?.frequencyHours || 24,
+                          destination: 'github',
+                        },
+                      }));
+                    }}
+                    className={`p-3.5 rounded-2xl border text-xs font-cinzel font-bold transition flex items-center gap-3 ${
+                      (adminSettingsForm.autoBackup?.destination || 'drive') === 'github'
+                        ? 'bg-purple-950/90 border-purple-500 text-purple-200 shadow-lg ring-1 ring-purple-500'
+                        : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-purple-900/50 border border-purple-600 flex items-center justify-center text-purple-300 shrink-0">
+                      <GitBranch className="w-4 h-4" />
+                    </div>
+                    <div className="text-left">
+                      <span className="block text-stone-100 font-bold">GitHub Repo</span>
+                      <span className="text-[10px] text-stone-400 font-normal">Repositorio Git / Código</span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminSettingsForm((prev) => ({
+                        ...prev,
+                        autoBackup: {
+                          ...prev.autoBackup,
+                          enabled: prev.autoBackup?.enabled ?? false,
+                          frequencyHours: prev.autoBackup?.frequencyHours || 24,
+                          destination: 'webhook',
+                        },
+                      }));
+                    }}
+                    className={`p-3.5 rounded-2xl border text-xs font-cinzel font-bold transition flex items-center gap-3 ${
+                      (adminSettingsForm.autoBackup?.destination || 'drive') === 'webhook'
+                        ? 'bg-amber-950/90 border-amber-500 text-amber-200 shadow-lg ring-1 ring-amber-500'
+                        : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-amber-900/50 border border-amber-600 flex items-center justify-center text-amber-300 shrink-0">
+                      <Webhook className="w-4 h-4" />
+                    </div>
+                    <div className="text-left">
+                      <span className="block text-stone-100 font-bold">Webhook HTTP</span>
+                      <span className="text-[10px] text-stone-400 font-normal">Discord, N8N, Zapier</span>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Fields for Google Drive */}
+                {(adminSettingsForm.autoBackup?.destination || 'drive') === 'drive' && (
+                  <div className="p-4 bg-[#181924] border border-emerald-800/80 rounded-2xl space-y-4 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-emerald-300 font-cinzel font-bold text-xs">
+                      <HardDrive className="w-4 h-4 text-emerald-400" />
+                      <span>Casillas de Vinculación con Google Drive</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-300 mb-1">
+                          Token de Acceso OAuth / Bearer Token (Google Drive):
+                        </label>
+                        <input
+                          type="password"
+                          value={adminSettingsForm.autoBackup?.driveAccessToken || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setAdminSettingsForm((prev) => ({
+                              ...prev,
+                              autoBackup: { ...prev.autoBackup, driveAccessToken: val },
+                            }));
+                          }}
+                          placeholder="ya29.a0A..."
+                          className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs font-mono outline-none focus:border-emerald-500"
+                        />
+                        <span className="text-[10px] text-stone-400 block mt-1">
+                          Ingresa un Access Token de tu cuenta de Google Drive para subir el respaldo directo.
+                        </span>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-300 mb-1">
+                          ID de la Carpeta Destino en Google Drive (Opcional):
+                        </label>
+                        <input
+                          type="text"
+                          value={adminSettingsForm.autoBackup?.driveFolderId || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setAdminSettingsForm((prev) => ({
+                              ...prev,
+                              autoBackup: { ...prev.autoBackup, driveFolderId: val },
+                            }));
+                          }}
+                          placeholder="ej: 1a2b3c4d5e6f7g8h9i..."
+                          className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs font-mono outline-none focus:border-emerald-500"
+                        />
+                        <span className="text-[10px] text-stone-400 block mt-1">
+                          Copia el código al final de la URL de tu carpeta de Google Drive.
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-300 mb-1">
+                        Etiqueta o Correo de la Cuenta de Drive Vinculada (Opcional):
+                      </label>
+                      <input
+                        type="text"
+                        value={adminSettingsForm.autoBackup?.driveAccountEmail || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAdminSettingsForm((prev) => ({
+                            ...prev,
+                            autoBackup: { ...prev.autoBackup, driveAccountEmail: val },
+                          }));
+                        }}
+                        placeholder="ej: mi-cuenta-respaldos@gmail.com"
+                        className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Fields for GitHub */}
+                {adminSettingsForm.autoBackup?.destination === 'github' && (
+                  <div className="p-4 bg-[#181924] border border-purple-800/80 rounded-2xl space-y-4 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-purple-300 font-cinzel font-bold text-xs">
+                      <GitBranch className="w-4 h-4 text-purple-400" />
+                      <span>Casillas de Vinculación con Repositorio GitHub</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-300 mb-1">
+                          GitHub Personal Access Token (PAT):
+                        </label>
+                        <input
+                          type="password"
+                          value={adminSettingsForm.autoBackup?.githubToken || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setAdminSettingsForm((prev) => ({
+                              ...prev,
+                              autoBackup: { ...prev.autoBackup, githubToken: val },
+                            }));
+                          }}
+                          placeholder="ghp_xxxxxxxxxxxx"
+                          className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs font-mono outline-none focus:border-purple-500"
+                        />
+                        <span className="text-[10px] text-stone-400 block mt-1">
+                          Token de GitHub con alcance 'repo'.
+                        </span>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-stone-300 mb-1">
+                          Repositorio Destino (usuario/repo):
+                        </label>
+                        <input
+                          type="text"
+                          value={adminSettingsForm.autoBackup?.githubRepo || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setAdminSettingsForm((prev) => ({
+                              ...prev,
+                              autoBackup: { ...prev.autoBackup, githubRepo: val },
+                            }));
+                          }}
+                          placeholder="miusuario/weroll-backups"
+                          className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs font-mono outline-none focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-300 mb-1">
+                        Ruta del Archivo JSON en el Repositorio:
+                      </label>
+                      <input
+                        type="text"
+                        value={adminSettingsForm.autoBackup?.githubPath || 'backups/weroll-backup-latest.json'}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAdminSettingsForm((prev) => ({
+                            ...prev,
+                            autoBackup: { ...prev.autoBackup, githubPath: val },
+                          }));
+                        }}
+                        placeholder="backups/weroll-backup-latest.json"
+                        className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs font-mono outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Fields for Webhook */}
+                {adminSettingsForm.autoBackup?.destination === 'webhook' && (
+                  <div className="p-4 bg-[#181924] border border-amber-800/80 rounded-2xl space-y-4 animate-in fade-in">
+                    <div className="flex items-center gap-2 text-amber-300 font-cinzel font-bold text-xs">
+                      <Webhook className="w-4 h-4 text-amber-400" />
+                      <span>Casillas de Vinculación por Webhook / Servidor</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-300 mb-1">
+                        URL del Webhook Destino:
+                      </label>
+                      <input
+                        type="text"
+                        value={adminSettingsForm.autoBackup?.webhookUrl || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAdminSettingsForm((prev) => ({
+                            ...prev,
+                            autoBackup: { ...prev.autoBackup, webhookUrl: val },
+                          }));
+                        }}
+                        placeholder="https://n8n.tu-servidor.com/webhook/weroll-backup"
+                        className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs font-mono outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 3: Status Summary & Manual Execution Trigger */}
+              <div className="bg-[#121316] border border-cyan-700/60 rounded-2xl p-5 space-y-4">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-cyan-950 border border-cyan-500 flex items-center justify-center text-cyan-300 shrink-0 shadow-inner">
+                      <Clock className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-cinzel font-bold text-stone-400 block uppercase tracking-wider">
+                        Última Vez que se Hizo el Back Up:
+                      </span>
+                      <span className="text-sm font-mono font-bold text-cyan-200 block">
+                        {adminSettingsForm.autoBackup?.lastBackupAt
+                          ? new Date(adminSettingsForm.autoBackup.lastBackupAt).toLocaleString('es-ES', {
+                              dateStyle: 'full',
+                              timeStyle: 'medium',
+                            })
+                          : 'Aún no se ha registrado ninguna ejecución'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span
+                      className={`px-3 py-1 rounded-lg text-xs font-mono font-bold uppercase border ${
+                        adminSettingsForm.autoBackup?.lastBackupStatus === 'success'
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                          : adminSettingsForm.autoBackup?.lastBackupStatus === 'error'
+                          ? 'bg-red-950 text-red-300 border-red-700'
+                          : 'bg-stone-800 text-stone-400 border-stone-700'
+                      }`}
+                    >
+                      {adminSettingsForm.autoBackup?.lastBackupStatus === 'success'
+                        ? '✓ Éxito'
+                        : adminSettingsForm.autoBackup?.lastBackupStatus === 'error'
+                        ? '✗ Error'
+                        : 'Pendiente'}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={handleRunAutoBackupTestInLobby}
+                      disabled={autoBackupTestLoading}
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>{autoBackupTestLoading ? 'Enviando...' : '⚡ Hacer Respaldo Manual Ahora'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {adminSettingsForm.autoBackup?.lastBackupMessage && (
+                  <div className="p-3 rounded-xl bg-[#181924] border border-stone-800 text-xs font-mono text-stone-300">
+                    💬 <span className="text-cyan-400 font-bold">Detalles de la última ejecución:</span>{' '}
+                    {adminSettingsForm.autoBackup.lastBackupMessage}
+                  </div>
+                )}
+
+                {autoBackupTestMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-950 border border-emerald-600 text-emerald-200 text-xs flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{autoBackupTestMsg}</span>
+                  </div>
+                )}
+
+                {autoBackupTestError && (
+                  <div className="p-3 rounded-xl bg-red-950 border border-red-600 text-red-200 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                    <span>{autoBackupTestError}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 4: History Table */}
+              <div className="bg-[#121316] border border-stone-800 rounded-2xl p-5 space-y-3">
+                <h4 className="font-cinzel font-bold text-xs uppercase text-stone-300 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-cyan-400" />
+                  Historial Reciente de Envíos Automáticos
+                </h4>
+                <div className="max-h-52 overflow-y-auto rounded-xl border border-stone-800/80 bg-[#161720]">
+                  {adminSettingsForm.autoBackup?.history && adminSettingsForm.autoBackup.history.length > 0 ? (
+                    <div className="divide-y divide-stone-800">
+                      {adminSettingsForm.autoBackup.history.map((log: AutoBackupLog) => (
+                        <div key={log.id} className="p-3 flex items-center justify-between text-xs hover:bg-[#1c1d29]">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold ${
+                                log.status === 'success'
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                  : 'bg-red-950 text-red-300 border border-red-800'
+                              }`}
+                            >
+                              {log.status === 'success' ? 'Éxito' : 'Error'}
+                            </span>
+                            <span className="text-stone-200 font-mono text-[11px]">{log.message}</span>
+                          </div>
+                          <span className="text-stone-400 font-mono text-[10px]">
+                            {new Date(log.timestamp).toLocaleString('es-ES')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center text-xs text-stone-500 italic">
+                      No hay registros previos en el historial de respaldos.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

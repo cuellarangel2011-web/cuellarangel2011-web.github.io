@@ -31,8 +31,14 @@ import {
   Castle,
   Upload,
   Dices,
+  Clock,
+  GitBranch,
+  HardDrive,
+  Webhook,
+  Send,
+  AlertTriangle,
 } from 'lucide-react';
-import { HostSettings, ChangelogEntry, UserAccountPublic } from '../../types/dnd';
+import { HostSettings, ChangelogEntry, UserAccountPublic, AutoBackupLog } from '../../types/dnd';
 
 interface HostSettingsModalProps {
   isOpen: boolean;
@@ -47,7 +53,62 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
   settings,
   onSaveSettings,
 }) => {
-  const [activeTab, setActiveTab] = useState<'app' | 'ai' | 'security' | 'changelog' | 'users' | 'vault' | 'notice'>('app');
+  const [activeTab, setActiveTab] = useState<
+    'app' | 'ai' | 'security' | 'changelog' | 'users' | 'vault' | 'notice' | 'autobackup'
+  >('app');
+
+  // Auto Backup State
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState<boolean>(settings.autoBackup?.enabled ?? false);
+  const [autoBackupFreq, setAutoBackupFreq] = useState<12 | 24>(settings.autoBackup?.frequencyHours || 24);
+  const [autoBackupDest, setAutoBackupDest] = useState<'github' | 'drive' | 'webhook'>(
+    settings.autoBackup?.destination || 'github'
+  );
+  const [githubToken, setGithubToken] = useState<string>(settings.autoBackup?.githubToken || '');
+  const [githubRepo, setGithubRepo] = useState<string>(settings.autoBackup?.githubRepo || '');
+  const [githubPath, setGithubPath] = useState<string>(
+    settings.autoBackup?.githubPath || 'backups/weroll-backup-latest.json'
+  );
+  const [driveFolderId, setDriveFolderId] = useState<string>(settings.autoBackup?.driveFolderId || '');
+  const [driveAccessToken, setDriveAccessToken] = useState<string>(settings.autoBackup?.driveAccessToken || '');
+  const [driveAccountEmail, setDriveAccountEmail] = useState<string>(settings.autoBackup?.driveAccountEmail || '');
+  const [webhookUrl, setWebhookUrl] = useState<string>(settings.autoBackup?.webhookUrl || '');
+
+  const [testBackupLoading, setTestBackupLoading] = useState<boolean>(false);
+  const [testBackupMsg, setTestBackupMsg] = useState<string>('');
+  const [testBackupError, setTestBackupError] = useState<string>('');
+
+  const handleRunTestBackup = async () => {
+    setTestBackupLoading(true);
+    setTestBackupMsg('');
+    setTestBackupError('');
+    try {
+      const cfg = {
+        enabled: autoBackupEnabled,
+        frequencyHours: autoBackupFreq,
+        destination: autoBackupDest,
+        githubToken: githubToken.trim(),
+        githubRepo: githubRepo.trim(),
+        githubPath: githubPath.trim(),
+        driveFolderId: driveFolderId.trim(),
+        driveAccessToken: driveAccessToken.trim(),
+        driveAccountEmail: driveAccountEmail.trim(),
+        webhookUrl: webhookUrl.trim(),
+      };
+      const res = await fetch('/api/admin/vault/trigger-autobackup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: cfg }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al ejecutar respaldo.');
+      setTestBackupMsg(data.message || '¡Respaldo de prueba enviado con éxito!');
+      fetchVault();
+    } catch (err: any) {
+      setTestBackupError(err.message || 'Error al conectar.');
+    } finally {
+      setTestBackupLoading(false);
+    }
+  };
 
   // App & Branding
   const [headerTitle, setHeaderTitle] = useState<string>(settings.headerTitle || 'WeRoll');
@@ -262,6 +323,22 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
       },
       changelog,
       roleSwitchingAllowed,
+      autoBackup: {
+        enabled: autoBackupEnabled,
+        frequencyHours: autoBackupFreq,
+        destination: autoBackupDest,
+        githubToken: githubToken.trim(),
+        githubRepo: githubRepo.trim(),
+        githubPath: githubPath.trim(),
+        driveFolderId: driveFolderId.trim(),
+        driveAccessToken: driveAccessToken.trim(),
+        driveAccountEmail: driveAccountEmail.trim(),
+        webhookUrl: webhookUrl.trim(),
+        lastBackupAt: settings.autoBackup?.lastBackupAt,
+        lastBackupStatus: settings.autoBackup?.lastBackupStatus,
+        lastBackupMessage: settings.autoBackup?.lastBackupMessage,
+        history: settings.autoBackup?.history || [],
+      },
     });
 
     setSavedSuccess(true);
@@ -329,6 +406,19 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
           >
             <Database className="w-3.5 h-3.5" />
             <span>Bóveda del Servidor</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('autobackup')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-cinzel font-semibold transition shrink-0 ${
+              activeTab === 'autobackup'
+                ? 'bg-cyan-700 text-white shadow'
+                : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Respaldos Auto (Drive/GitHub)</span>
           </button>
 
           <button
@@ -602,6 +692,368 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
                   {vaultSheets.length === 0 && (
                     <div className="col-span-2 text-center py-4 text-xs text-stone-500">
                       No hay Player Sheets sincronizadas en el servidor aún.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* AUTOMATED BACKUPS (GITHUB / DRIVE / WEBHOOK) TAB          */}
+          {/* ========================================================= */}
+          {activeTab === 'autobackup' && (
+            <div className="space-y-5">
+              <div className="bg-[#121316] border border-cyan-800/80 rounded-2xl p-4 shadow-lg">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-800 pb-3 mb-4">
+                  <div>
+                    <h4 className="font-cinzel font-bold text-sm text-cyan-300 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-cyan-400" />
+                      Respaldos Automáticos en la Nube
+                    </h4>
+                    <p className="text-xs text-stone-400 mt-0.5">
+                      Sincroniza y envía un Respaldo Total Maestro automáticamente cada 12 o 24 horas a GitHub, Google Drive o un Webhook.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-start sm:self-center">
+                    <span className="text-xs font-cinzel font-bold text-stone-300">Estado:</span>
+                    <button
+                      type="button"
+                      onClick={() => setAutoBackupEnabled(!autoBackupEnabled)}
+                      className={`px-3 py-1.5 rounded-xl font-cinzel font-bold text-xs transition border flex items-center gap-1.5 ${
+                        autoBackupEnabled
+                          ? 'bg-cyan-950 border-cyan-500 text-cyan-200 shadow'
+                          : 'bg-stone-900 border-stone-800 text-stone-500 hover:text-stone-300'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${autoBackupEnabled ? 'bg-cyan-400 animate-ping' : 'bg-stone-600'}`} />
+                      <span>{autoBackupEnabled ? 'AUTOMÁTICO ACTIVADO' : 'DESACTIVADO'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status Summary & Manual Trigger Card */}
+                <div className="p-3.5 rounded-xl bg-[#181924] border border-cyan-500/50 mb-4 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-cyan-950 border border-cyan-500 flex items-center justify-center text-cyan-300 shrink-0">
+                        <Clock className="w-4 h-4 animate-pulse" />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-cinzel font-bold uppercase text-stone-400 block tracking-wider">
+                          Última Copia de Seguridad Realizada:
+                        </span>
+                        <span className="font-mono font-bold text-xs text-cyan-200 block">
+                          {settings.autoBackup?.lastBackupAt
+                            ? new Date(settings.autoBackup.lastBackupAt).toLocaleString('es-ES', {
+                                dateStyle: 'medium',
+                                timeStyle: 'short',
+                              })
+                            : 'Ningún respaldo ejecutado aún'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`px-2.5 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase border ${
+                          settings.autoBackup?.lastBackupStatus === 'success'
+                            ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                            : settings.autoBackup?.lastBackupStatus === 'error'
+                            ? 'bg-red-950 text-red-300 border-red-700'
+                            : 'bg-stone-800 text-stone-400 border-stone-700'
+                        }`}
+                      >
+                        {settings.autoBackup?.lastBackupStatus === 'success'
+                          ? 'Éxito'
+                          : settings.autoBackup?.lastBackupStatus === 'error'
+                          ? 'Error'
+                          : 'Pendiente'}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={handleRunTestBackup}
+                        disabled={testBackupLoading}
+                        className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-cinzel font-bold text-xs shadow-md transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>{testBackupLoading ? 'Enviando...' : '⚡ Hacer Copia Manual Ahora'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {settings.autoBackup?.lastBackupMessage && (
+                    <div className="text-[11px] text-stone-300 font-mono bg-[#111218] p-2 rounded-lg border border-stone-800">
+                      💬 <span className="text-cyan-400 font-semibold">Detalle del último envío:</span>{' '}
+                      {settings.autoBackup.lastBackupMessage}
+                    </div>
+                  )}
+                </div>
+
+                {/* Configuration Options */}
+                <div className="space-y-4">
+                  {/* Frequency Selector */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-cinzel font-bold text-stone-300 mb-1">
+                        Frecuencia de Envío Automático
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAutoBackupFreq(12)}
+                          className={`p-2 rounded-xl border text-xs font-cinzel font-bold transition ${
+                            autoBackupFreq === 12
+                              ? 'bg-cyan-600/30 border-cyan-500 text-cyan-200'
+                              : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                          }`}
+                        >
+                          Cada 12 Horas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAutoBackupFreq(24)}
+                          className={`p-2 rounded-xl border text-xs font-cinzel font-bold transition ${
+                            autoBackupFreq === 24
+                              ? 'bg-cyan-600/30 border-cyan-500 text-cyan-200'
+                              : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                          }`}
+                        >
+                          Cada 24 Horas
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-cinzel font-bold text-stone-300 mb-1">
+                        Destino del Respaldo
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAutoBackupDest('github')}
+                          className={`p-2 rounded-xl border text-xs font-cinzel font-bold transition flex items-center justify-center gap-1.5 ${
+                            autoBackupDest === 'github'
+                              ? 'bg-purple-600/30 border-purple-500 text-purple-200'
+                              : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                          }`}
+                        >
+                          <GitBranch className="w-3.5 h-3.5" />
+                          <span>GitHub</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAutoBackupDest('drive')}
+                          className={`p-2 rounded-xl border text-xs font-cinzel font-bold transition flex items-center justify-center gap-1.5 ${
+                            autoBackupDest === 'drive'
+                              ? 'bg-emerald-600/30 border-emerald-500 text-emerald-200'
+                              : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                          }`}
+                        >
+                          <HardDrive className="w-3.5 h-3.5" />
+                          <span>Drive</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAutoBackupDest('webhook')}
+                          className={`p-2 rounded-xl border text-xs font-cinzel font-bold transition flex items-center justify-center gap-1.5 ${
+                            autoBackupDest === 'webhook'
+                              ? 'bg-amber-600/30 border-amber-500 text-amber-200'
+                              : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
+                          }`}
+                        >
+                          <Webhook className="w-3.5 h-3.5" />
+                          <span>Webhook</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Destination Specific Inputs */}
+                  {autoBackupDest === 'github' && (
+                    <div className="p-3.5 bg-[#181920] border border-stone-800 rounded-xl space-y-3 animate-in fade-in">
+                      <div className="flex items-center gap-2 text-purple-300 font-cinzel font-bold text-xs">
+                        <GitBranch className="w-4 h-4 text-purple-400" />
+                        <span>Configuración de Repositorio GitHub</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] text-stone-400 mb-1">
+                            GitHub Personal Access Token (PAT):
+                          </label>
+                          <input
+                            type="password"
+                            value={githubToken}
+                            onChange={(e) => setGithubToken(e.target.value)}
+                            placeholder="ghp_xxxxxxxxxxxx"
+                            className="w-full bg-[#121316] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100 font-mono"
+                          />
+                          <span className="text-[10px] text-stone-500 block mt-0.5">
+                            Crea un token en GitHub con permiso 'repo'.
+                          </span>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] text-stone-400 mb-1">
+                            Repositorio Destino:
+                          </label>
+                          <input
+                            type="text"
+                            value={githubRepo}
+                            onChange={(e) => setGithubRepo(e.target.value)}
+                            placeholder="usuario/weroll-respaldos"
+                            className="w-full bg-[#121316] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100 font-mono"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] text-stone-400 mb-1">
+                          Ruta del Archivo en el Repositorio:
+                        </label>
+                        <input
+                          type="text"
+                          value={githubPath}
+                          onChange={(e) => setGithubPath(e.target.value)}
+                          placeholder="backups/weroll-backup-latest.json"
+                          className="w-full bg-[#121316] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100 font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {autoBackupDest === 'drive' && (
+                    <div className="p-3.5 bg-[#181920] border border-stone-800 rounded-xl space-y-3 animate-in fade-in">
+                      <div className="flex items-center gap-2 text-emerald-300 font-cinzel font-bold text-xs">
+                        <HardDrive className="w-4 h-4 text-emerald-400" />
+                        <span>Configuración de Google Drive</span>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-stone-400 mb-1">
+                          Token de Acceso OAuth / Bearer Token de Google Drive:
+                        </label>
+                        <input
+                          type="password"
+                          value={driveAccessToken}
+                          onChange={(e) => setDriveAccessToken(e.target.value)}
+                          placeholder="ya29.a0A..."
+                          className="w-full bg-[#121316] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-stone-400 mb-1">
+                          ID de Carpeta en Google Drive (Opcional):
+                        </label>
+                        <input
+                          type="text"
+                          value={driveFolderId}
+                          onChange={(e) => setDriveFolderId(e.target.value)}
+                          placeholder="1a2b3c4d5e..."
+                          className="w-full bg-[#121316] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-stone-400 mb-1">
+                          Correo / Cuenta de Drive Vinculada (Opcional):
+                        </label>
+                        <input
+                          type="text"
+                          value={driveAccountEmail}
+                          onChange={(e) => setDriveAccountEmail(e.target.value)}
+                          placeholder="ej. mi-cuenta@gmail.com"
+                          className="w-full bg-[#121316] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {autoBackupDest === 'webhook' && (
+                    <div className="p-3.5 bg-[#181920] border border-stone-800 rounded-xl space-y-3 animate-in fade-in">
+                      <div className="flex items-center gap-2 text-amber-300 font-cinzel font-bold text-xs">
+                        <Webhook className="w-4 h-4 text-amber-400" />
+                        <span>Configuración de Webhook / Servidor Propio</span>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-stone-400 mb-1">
+                          URL del Webhook (Discord, N8N, Zapier, Make, etc.):
+                        </label>
+                        <input
+                          type="text"
+                          value={webhookUrl}
+                          onChange={(e) => setWebhookUrl(e.target.value)}
+                          placeholder="https://n8n.tu-servidor.com/webhook/weroll-backup"
+                          className="w-full bg-[#121316] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100 font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Manual Test Action */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-stone-800">
+                    <span className="text-[11px] text-stone-400 italic">
+                      Comprueba la conexión inmediata y envía un respaldo de prueba ahora mismo:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRunTestBackup}
+                      disabled={testBackupLoading}
+                      className="px-4 py-2 rounded-xl bg-cyan-700 hover:bg-cyan-600 text-white font-cinzel font-bold text-xs shadow transition flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>{testBackupLoading ? 'Probando Envio...' : 'Probar Respaldo Ahora'}</span>
+                    </button>
+                  </div>
+
+                  {testBackupMsg && (
+                    <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-600 text-emerald-200 text-xs flex items-center gap-2 animate-in fade-in">
+                      <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>{testBackupMsg}</span>
+                    </div>
+                  )}
+
+                  {testBackupError && (
+                    <div className="p-3 rounded-xl bg-red-950/80 border border-red-600 text-red-200 text-xs flex items-center gap-2 animate-in fade-in">
+                      <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                      <span>{testBackupError}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Backup History */}
+              <div className="space-y-2">
+                <h5 className="font-cinzel font-bold text-xs uppercase text-cyan-300 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-cyan-400" />
+                  Historial de Respaldos Automáticos
+                </h5>
+                <div className="bg-[#121316] border border-stone-800 rounded-xl overflow-hidden shadow max-h-48 overflow-y-auto">
+                  {settings.autoBackup?.history && settings.autoBackup.history.length > 0 ? (
+                    <div className="divide-y divide-stone-800/80">
+                      {settings.autoBackup.history.map((log: AutoBackupLog) => (
+                        <div key={log.id} className="p-2.5 flex items-center justify-between text-xs hover:bg-[#181922]">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono uppercase font-bold ${
+                                log.status === 'success'
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                                  : 'bg-red-950 text-red-300 border border-red-700'
+                              }`}
+                            >
+                              {log.status === 'success' ? 'Éxito' : 'Error'}
+                            </span>
+                            <span className="text-stone-300 font-mono text-[11px]">{log.message}</span>
+                          </div>
+                          <span className="text-stone-500 font-mono text-[10px]">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center text-xs text-stone-500 italic">
+                      No hay ejecuciones de respaldo automático en el historial aún.
                     </div>
                   )}
                 </div>

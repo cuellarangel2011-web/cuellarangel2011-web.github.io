@@ -1,6 +1,6 @@
 import express from 'express';
 import { GoogleGenAI } from '@google/genai';
-import type { DiceRollResult, PartyMemberLive, PresenceStatus, LiveCombatantMini } from '../types/dnd.ts';
+import type { DiceRollResult, PartyMemberLive, PresenceStatus, LiveCombatantMini, AutoBackupConfig, AutoBackupLog } from '../types/dnd.ts';
 import { dataStore } from './dataStore.ts';
 
 export const apiRouter = express.Router();
@@ -888,6 +888,244 @@ apiRouter.post('/vault/restore-all', (req, res) => {
     res.status(400).json({ error: err.message || 'Error al restaurar respaldo.' });
   }
 });
+
+// Helper for performing automated GitHub / Drive / Webhook Backups
+export async function performAutoBackupTrigger(overrideConfig?: AutoBackupConfig) {
+  const settings = dataStore.getHostSettings();
+  const config = overrideConfig || settings.autoBackup;
+
+  if (!config) {
+    return { success: false, message: 'El respaldo automático no está configurado.' };
+  }
+
+  const backupData = dataStore.getFullBackup();
+  const jsonStr = JSON.stringify(backupData, null, 2);
+  const sizeKb = Math.round(Buffer.byteLength(jsonStr, 'utf8') / 1024);
+  const now = Date.now();
+
+  try {
+    if (config.destination === 'github') {
+      if (!config.githubToken || !config.githubRepo) {
+        throw new Error('Falta el Token Personal (PAT) de GitHub o el nombre del Repositorio (ej: usuario/weroll-respaldos).');
+      }
+
+      const repo = config.githubRepo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '');
+      const filePath = (config.githubPath?.trim() || 'backups/weroll-backup-latest.json').replace(/^\//, '');
+      const apiUrl = `https://api.github.com/repos/${repo}/contents/${filePath}`;
+
+      let sha: string | undefined = undefined;
+      try {
+        const getRes = await fetch(apiUrl, {
+          headers: {
+            Authorization: `token ${config.githubToken.trim()}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'WeRoll-AutoBackup',
+          },
+        });
+        if (getRes.ok) {
+          const fileInfo: any = await getRes.json();
+          sha = fileInfo.sha;
+        }
+      } catch (e) {
+        // file doesn't exist yet
+      }
+
+      const contentBase64 = Buffer.from(jsonStr).toString('base64');
+      const putRes = await fetch(apiUrl, {
+        method: 'PUT',
+        headers: {
+          Authorization: `token ${config.githubToken.trim()}`,
+          Accept: 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'WeRoll-AutoBackup',
+        },
+        body: JSON.stringify({
+          message: `chore: Auto-backup WeRoll 5E [${new Date().toISOString()}]`,
+          content: contentBase64,
+          sha,
+        }),
+      });
+
+      if (!putRes.ok) {
+        const errJson: any = await putRes.json().catch(() => ({}));
+        throw new Error(errJson.message || `Error HTTP ${putRes.status} al enviar respaldo a GitHub.`);
+      }
+
+      const successMsg = `Respaldo automático enviado exitosamente a GitHub: ${repo}/${filePath} (${sizeKb} KB)`;
+      const logEntry: AutoBackupLog = {
+        id: `log-${now}`,
+        timestamp: now,
+        destination: 'github',
+        status: 'success',
+        message: successMsg,
+        sizeKb,
+      };
+
+      const history = [logEntry, ...(config.history || [])].slice(0, 20);
+      dataStore.saveHostSettings({
+        autoBackup: {
+          ...config,
+          lastBackupAt: now,
+          lastBackupStatus: 'success',
+          lastBackupMessage: successMsg,
+          history,
+        },
+      });
+
+      return { success: true, message: successMsg, sizeKb };
+    } else if (config.destination === 'drive') {
+      if (!config.driveAccessToken) {
+        throw new Error('Falta el Token de Acceso de Google Drive.');
+      }
+
+      const metadata = {
+        name: `weroll-backup-${new Date().toISOString().split('T')[0]}.json`,
+        mimeType: 'application/json',
+        parents: config.driveFolderId?.trim() ? [config.driveFolderId.trim()] : undefined,
+      };
+
+      const form = new FormData();
+      form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      form.append('file', new Blob([jsonStr], { type: 'application/json' }));
+
+      const driveRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.driveAccessToken.trim()}`,
+        },
+        body: form,
+      });
+
+      if (!driveRes.ok) {
+        const errJson: any = await driveRes.json().catch(() => ({}));
+        throw new Error(errJson.error?.message || `Error HTTP ${driveRes.status} al subir a Google Drive.`);
+      }
+
+      const successMsg = `Respaldo automático subido exitosamente a Google Drive (${sizeKb} KB)`;
+      const logEntry: AutoBackupLog = {
+        id: `log-${now}`,
+        timestamp: now,
+        destination: 'drive',
+        status: 'success',
+        message: successMsg,
+        sizeKb,
+      };
+
+      const history = [logEntry, ...(config.history || [])].slice(0, 20);
+      dataStore.saveHostSettings({
+        autoBackup: {
+          ...config,
+          lastBackupAt: now,
+          lastBackupStatus: 'success',
+          lastBackupMessage: successMsg,
+          history,
+        },
+      });
+
+      return { success: true, message: successMsg, sizeKb };
+    } else if (config.destination === 'webhook') {
+      if (!config.webhookUrl) {
+        throw new Error('Falta la URL del Webhook.');
+      }
+
+      const whRes = await fetch(config.webhookUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'WEROLL_AUTO_BACKUP',
+          timestamp: now,
+          date: new Date().toISOString(),
+          sizeKb,
+          backup: backupData,
+        }),
+      });
+
+      if (!whRes.ok) {
+        throw new Error(`Error HTTP ${whRes.status} al enviar respaldo por Webhook.`);
+      }
+
+      const successMsg = `Respaldo automático enviado exitosamente al Webhook (${sizeKb} KB)`;
+      const logEntry: AutoBackupLog = {
+        id: `log-${now}`,
+        timestamp: now,
+        destination: 'webhook',
+        status: 'success',
+        message: successMsg,
+        sizeKb,
+      };
+
+      const history = [logEntry, ...(config.history || [])].slice(0, 20);
+      dataStore.saveHostSettings({
+        autoBackup: {
+          ...config,
+          lastBackupAt: now,
+          lastBackupStatus: 'success',
+          lastBackupMessage: successMsg,
+          history,
+        },
+      });
+
+      return { success: true, message: successMsg, sizeKb };
+    } else {
+      throw new Error('Destino de respaldo no válido.');
+    }
+  } catch (err: any) {
+    const errorMsg = err.message || 'Error al ejecutar el respaldo automático.';
+    const logEntry: AutoBackupLog = {
+      id: `log-${now}`,
+      timestamp: now,
+      destination: config.destination || 'github',
+      status: 'error',
+      message: errorMsg,
+      sizeKb,
+    };
+
+    const history = [logEntry, ...(config.history || [])].slice(0, 20);
+    dataStore.saveHostSettings({
+      autoBackup: {
+        ...config,
+        lastBackupAt: now,
+        lastBackupStatus: 'error',
+        lastBackupMessage: errorMsg,
+        history,
+      },
+    });
+
+    return { success: false, message: errorMsg };
+  }
+}
+
+// Admin Trigger Manual / Test Automated Backup
+apiRouter.post('/admin/vault/trigger-autobackup', async (req, res) => {
+  try {
+    const overrideConfig = req.body?.config;
+    const result = await performAutoBackupTrigger(overrideConfig);
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Error en la ejecución del respaldo.' });
+  }
+});
+
+// Periodic background check worker (runs every 10 minutes)
+setInterval(() => {
+  try {
+    const settings = dataStore.getHostSettings();
+    const cfg = settings.autoBackup;
+    if (cfg && cfg.enabled) {
+      const intervalMs = (cfg.frequencyHours || 24) * 3600 * 1000;
+      const last = cfg.lastBackupAt || 0;
+      if (Date.now() - last >= intervalMs) {
+        console.log(`[AutoBackup Worker] Running automated backup schedule (frequency: ${cfg.frequencyHours}h)...`);
+        performAutoBackupTrigger().catch((err) => console.error('[AutoBackup Worker Error]', err));
+      }
+    }
+  } catch (e) {
+    console.error('[AutoBackup Worker Error]', e);
+  }
+}, 10 * 60 * 1000);
 
 // ==========================================
 // CHANGELOG / UPDATES BLOG ADMIN MANAGEMENT
