@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Shield, KeyRound, Lock, AlertCircle, Sparkles, Check, ChevronRight, Mail, UserPlus, LogIn, Clock } from 'lucide-react';
+import { User, Shield, KeyRound, Lock, AlertCircle, Sparkles, Check, ChevronRight, Mail, UserPlus, LogIn, Clock, ArrowLeft, Crown } from 'lucide-react';
 import { UserRole } from '../../types/dnd';
 
 export interface AuthSessionUser {
@@ -27,8 +27,9 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
   moderatorPasswordExpected = 'admin',
   onSelectRole,
 }) => {
-  const [authMode, setAuthMode] = useState<'cards' | 'login' | 'register' | 'adminPassword'>('cards');
-  const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
+  // Default mode is directly 'login' as requested
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'adminPassword'>('login');
+  const [selectedRole, setSelectedRole] = useState<UserRole>('moderator');
 
   // Login form state
   const [loginEmail, setLoginEmail] = useState<string>('');
@@ -50,65 +51,23 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleChooseRoleCard = (role: UserRole) => {
-    setErrorMessage('');
-    setPendingNotice('');
-    setRejectedNotice(null);
-    setEnteredPassword('');
-
-    if (role === 'moderator') {
-      setSelectedRole('moderator');
-      setAuthMode('adminPassword');
-      return;
-    }
-
-    if (role === 'player') {
-      setSelectedRole('player');
-      setAuthMode('login');
-      return;
-    }
-
-    if (role === 'dm') {
-      setSelectedRole('dm');
-      if (dmPasswordExpected && dmPasswordExpected.trim()) {
-        setAuthMode('adminPassword');
-      } else {
-        setAuthMode('login');
-      }
-    }
-  };
-
   const handleDirectPasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
     setPendingNotice('');
     setRejectedNotice(null);
 
-    if (selectedRole === 'dm') {
-      if (!dmPasswordExpected || enteredPassword.trim() === dmPasswordExpected.trim()) {
-        onSelectRole('dm', {
-          id: 'dm-local',
-          email: 'dm@weroll.app',
-          displayName: 'Dungeon Master',
-          role: 'dm',
-          status: 'approved',
-        });
-      } else {
-        setErrorMessage('Contraseña de Dungeon Master incorrecta.');
-      }
-    } else if (selectedRole === 'moderator') {
-      const expected = moderatorPasswordExpected || 'admin';
-      if (enteredPassword.trim() === expected.trim()) {
-        onSelectRole('moderator', {
-          id: 'admin-master',
-          email: 'admin@weroll.app',
-          displayName: 'Administrador Supremo',
-          role: 'moderator',
-          status: 'approved',
-        });
-      } else {
-        setErrorMessage('Contraseña de Administrador incorrecta.');
-      }
+    const expected = (moderatorPasswordExpected || 'admin').trim();
+    if (enteredPassword.trim() === expected) {
+      onSelectRole('moderator', {
+        id: 'usr-admin-master',
+        email: 'admin@weroll.app',
+        displayName: 'Administrador Supremo',
+        role: 'moderator',
+        status: 'approved',
+      });
+    } else {
+      setErrorMessage('Contraseña de Administrador incorrecta.');
     }
   };
 
@@ -118,7 +77,7 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
     setPendingNotice('');
     setRejectedNotice(null);
     if (!loginEmail.trim() || !loginPassword.trim()) {
-      setErrorMessage('Por favor ingresa correo y contraseña.');
+      setErrorMessage('Por favor ingresa tu correo electrónico y contraseña.');
       return;
     }
 
@@ -184,7 +143,7 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
       }
 
       setPendingNotice(
-        '¡Solicitud enviada con éxito! Tu cuenta está en estado PENDIENTE. El Administrador debe aprobarla antes de que puedas iniciar sesión.'
+        '¡Solicitud enviada con éxito! Tu cuenta está en estado PENDIENTE. El Administrador debe aprobarla antes de que puedas acceder a las mesas.'
       );
       setAuthMode('login');
       setLoginEmail(regEmail);
@@ -201,23 +160,21 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
       role="dialog"
       aria-modal="true"
     >
-      <div className="relative w-full max-w-xl bg-[#181920] border-2 border-amber-900/80 rounded-2xl shadow-2xl p-6 sm:p-8 text-stone-200 flex flex-col max-h-[95vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-[#181920] border-2 border-amber-900/80 rounded-3xl shadow-2xl p-6 sm:p-8 text-stone-200 flex flex-col max-h-[95vh] overflow-y-auto">
         {/* Header Branding */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-950 border border-amber-500 shadow-lg text-amber-200 mb-3">
-            <Shield className="w-6 h-6" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-600 to-amber-950 border border-amber-500 shadow-lg text-amber-200 mb-3">
+            <Shield className="w-7 h-7" />
           </div>
           <h2 className="font-cinzel font-black text-2xl text-amber-300 tracking-wider">
             WeRoll 5E
           </h2>
           <p className="text-xs text-stone-400 mt-1 uppercase tracking-widest font-cinzel">
             {authMode === 'register'
-              ? 'Registro de Nuevo Usuario'
-              : authMode === 'login'
-              ? 'Iniciar Sesión en tu Cuenta'
+              ? 'Crear Cuenta y Seleccionar Perfil'
               : authMode === 'adminPassword'
-              ? 'Acceso Protegido'
-              : 'Selecciona tu Perfil de Acceso'}
+              ? 'Acceso con Clave Maestra'
+              : 'Iniciar Sesión en tu Cuenta'}
           </p>
         </div>
 
@@ -255,162 +212,94 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
           </div>
         )}
 
-        {/* 1. Main Role Cards Selector */}
-        {authMode === 'cards' && (
-          <div className="space-y-3.5">
-            {/* Jugador */}
-            <button
-              type="button"
-              onClick={() => handleChooseRoleCard('player')}
-              className="w-full text-left p-4 rounded-xl bg-[#131418] hover:bg-[#1c1e27] border-2 border-stone-800 hover:border-amber-600 transition flex items-center justify-between group shadow-sm"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-amber-950/70 border border-amber-600/40 flex items-center justify-center text-amber-400 group-hover:scale-105 transition">
-                  <User className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-cinzel font-bold text-sm text-stone-100 group-hover:text-amber-300 transition">
-                    Jugador / Aventurero
-                  </h4>
-                  <p className="text-xs text-stone-400 leading-relaxed mt-0.5">
-                    Ficha de personaje 5E, tiradas de dados en vivo y consulta de reglas.
-                  </p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-stone-500 group-hover:text-amber-400 group-hover:translate-x-1 transition" />
-            </button>
-
-            {/* Dungeon Master */}
-            <button
-              type="button"
-              onClick={() => handleChooseRoleCard('dm')}
-              className="w-full text-left p-4 rounded-xl bg-[#131418] hover:bg-[#1e172a] border-2 border-stone-800 hover:border-purple-600 transition flex items-center justify-between group shadow-sm"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-purple-950/70 border border-purple-600/40 flex items-center justify-center text-purple-400 group-hover:scale-105 transition">
-                  <Shield className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-cinzel font-bold text-sm text-stone-100 group-hover:text-purple-300 transition">
-                      Dungeon Master
-                    </h4>
-                    {dmPasswordExpected && (
-                      <span className="text-[10px] text-purple-400 flex items-center gap-0.5 bg-purple-950/80 px-2 py-0.5 rounded border border-purple-800/50">
-                        <Lock className="w-2.5 h-2.5" /> Protegido
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-stone-400 leading-relaxed mt-0.5">
-                    World Sheets, pantalla de combate, NPCs, monstruos, mapas y secretos confidenciales.
-                  </p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-stone-500 group-hover:text-purple-400 group-hover:translate-x-1 transition" />
-            </button>
-
-            {/* Moderador */}
-            <button
-              type="button"
-              onClick={() => handleChooseRoleCard('moderator')}
-              className="w-full text-left p-4 rounded-xl bg-[#131418] hover:bg-[#151f28] border-2 border-stone-800 hover:border-blue-600 transition flex items-center justify-between group shadow-sm"
-            >
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-blue-950/70 border border-blue-600/40 flex items-center justify-center text-blue-400 group-hover:scale-105 transition">
-                  <KeyRound className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-cinzel font-bold text-sm text-stone-100 group-hover:text-blue-300 transition">
-                      Moderador / Administrador
-                    </h4>
-                    <span className="text-[10px] text-blue-400 flex items-center gap-0.5 bg-blue-950/80 px-2 py-0.5 rounded border border-blue-800/50">
-                      <Lock className="w-2.5 h-2.5" /> Clave Maestra
-                    </span>
-                  </div>
-                  <p className="text-xs text-stone-400 leading-relaxed mt-0.5">
-                    Aprobación de cuentas, bóveda en servidor, modelos de IA y copias de seguridad.
-                  </p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-stone-500 group-hover:text-blue-400 group-hover:translate-x-1 transition" />
-            </button>
-
-            {/* Or Register Option */}
-            <div className="pt-2 text-center">
-              <button
-                type="button"
-                onClick={() => setAuthMode('register')}
-                className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline flex items-center justify-center gap-1 mx-auto"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                ¿Eres nuevo? Registra tu cuenta aquí
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 2. Login Form */}
+        {/* =================================================================== */}
+        {/* 1. LOGIN FORM (FIRST OPTION PRESENTED TO USERS)                     */}
+        {/* =================================================================== */}
         {authMode === 'login' && (
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
                 Correo Electrónico
               </label>
-              <input
-                type="email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="tu@correo.com"
-                autoFocus
-                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm outline-none"
-              />
+              <div className="relative">
+                <input
+                  type="email"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="tu@correo.com"
+                  autoFocus
+                  required
+                  className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm outline-none transition"
+                />
+              </div>
             </div>
 
             <div>
               <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
                 Contraseña
               </label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none"
-              />
+              <div className="relative">
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none transition"
+                />
+              </div>
             </div>
 
-            <div className="flex items-center justify-between pt-2">
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-cinzel font-bold text-sm shadow-xl transition transform hover:scale-[1.01] disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <LogIn className="w-4 h-4" />
+              {isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+            </button>
+
+            {/* Link to Register */}
+            <div className="pt-3 text-center border-t border-stone-800/80 space-y-2">
+              <p className="text-xs text-stone-400">
+                ¿No tienes una cuenta registrada todavía?
+              </p>
               <button
                 type="button"
-                onClick={() => setAuthMode('cards')}
-                className="text-xs text-stone-400 hover:text-stone-200"
+                onClick={() => {
+                  setErrorMessage('');
+                  setPendingNotice('');
+                  setRejectedNotice(null);
+                  setAuthMode('register');
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/80 border border-amber-600/50 text-amber-300 font-cinzel font-bold text-xs transition flex items-center justify-center gap-1.5 mx-auto"
               >
-                ← Volver a roles
-              </button>
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-cinzel font-bold text-xs shadow-lg transition disabled:opacity-50"
-              >
-                {isLoading ? 'Verificando...' : 'Iniciar Sesión'}
+                <UserPlus className="w-3.5 h-3.5" />
+                Registrar Nueva Cuenta
               </button>
             </div>
 
-            <div className="pt-2 text-center border-t border-stone-800/80">
+            {/* Direct Admin Master Password Access Option */}
+            <div className="pt-1 text-center">
               <button
                 type="button"
-                onClick={() => setAuthMode('register')}
-                className="text-xs text-stone-400 hover:text-amber-300"
+                onClick={() => {
+                  setErrorMessage('');
+                  setPendingNotice('');
+                  setAuthMode('adminPassword');
+                }}
+                className="text-[11px] text-stone-500 hover:text-blue-400 font-mono transition flex items-center justify-center gap-1 mx-auto"
               >
-                ¿No tienes cuenta? <strong className="underline text-amber-400">Regístrate</strong>
+                <KeyRound className="w-3 h-3" />
+                Acceso directo con Clave Maestra de Administrador
               </button>
             </div>
           </form>
         )}
 
-        {/* 3. Register Form */}
+        {/* =================================================================== */}
+        {/* 2. REGISTER FORM (WITH REQUIRED ROLE PROFILES)                      */}
+        {/* =================================================================== */}
         {authMode === 'register' && (
           <form onSubmit={handleRegisterSubmit} className="space-y-4">
             <div>
@@ -423,20 +312,22 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
                 onChange={(e) => setRegEmail(e.target.value)}
                 placeholder="tu@correo.com"
                 autoFocus
-                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm outline-none"
+                required
+                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm outline-none transition"
               />
             </div>
 
             <div>
               <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
-                Nombre para Mostrar en Mesa
+                Nombre para Mostrar en Mesa / Apodo
               </label>
               <input
                 type="text"
                 value={regName}
                 onChange={(e) => setRegName(e.target.value)}
-                placeholder="ej. Sir Gareth"
-                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm outline-none"
+                placeholder="ej. Sir Gareth o El Brujo Gris"
+                required
+                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm outline-none transition"
               />
             </div>
 
@@ -449,95 +340,127 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
                 value={regPassword}
                 onChange={(e) => setRegPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none"
+                required
+                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none transition"
               />
             </div>
 
+            {/* Profile Selection: Player, Dungeon Master, Player & Dungeon Master */}
             <div>
-              <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
-                Rol Solicitado
+              <label className="block text-xs font-cinzel font-bold uppercase text-amber-300 mb-1.5">
+                Selecciona tu Perfil de Acceso
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* 1. Jugador / Aventurero */}
                 <button
                   type="button"
                   onClick={() => setRegRole('player')}
-                  className={`py-2 px-1 rounded-xl text-xs font-cinzel font-bold border transition text-center ${
+                  className={`p-3 rounded-2xl border text-left transition flex flex-col items-center sm:items-start text-center sm:text-left ${
                     regRole === 'player'
-                      ? 'bg-amber-600 text-white border-amber-500 shadow-md'
-                      : 'bg-[#121316] text-stone-400 border-stone-800 hover:border-stone-700'
+                      ? 'bg-amber-950/80 border-amber-500 text-amber-200 shadow-md ring-1 ring-amber-500'
+                      : 'bg-[#121316] border-stone-800 text-stone-400 hover:border-stone-700'
                   }`}
                 >
-                  Jugador
+                  <User className="w-5 h-5 mb-1 text-amber-400" />
+                  <span className="font-cinzel font-bold text-xs text-stone-200 block">
+                    Jugador / Aventurero
+                  </span>
+                  <span className="text-[10px] text-stone-400 mt-0.5">
+                    Hojas de personaje y dados
+                  </span>
                 </button>
+
+                {/* 2. Dungeon Master */}
                 <button
                   type="button"
                   onClick={() => setRegRole('dm')}
-                  className={`py-2 px-1 rounded-xl text-xs font-cinzel font-bold border transition text-center ${
+                  className={`p-3 rounded-2xl border text-left transition flex flex-col items-center sm:items-start text-center sm:text-left ${
                     regRole === 'dm'
-                      ? 'bg-purple-700 text-white border-purple-500 shadow-md'
-                      : 'bg-[#121316] text-stone-400 border-stone-800 hover:border-stone-700'
+                      ? 'bg-purple-950/80 border-purple-500 text-purple-200 shadow-md ring-1 ring-purple-500'
+                      : 'bg-[#121316] border-stone-800 text-stone-400 hover:border-stone-700'
                   }`}
                 >
-                  Dungeon Master
+                  <Crown className="w-5 h-5 mb-1 text-purple-400" />
+                  <span className="font-cinzel font-bold text-xs text-stone-200 block">
+                    Dungeon Master
+                  </span>
+                  <span className="text-[10px] text-stone-400 mt-0.5">
+                    World Sheets y mesas
+                  </span>
                 </button>
+
+                {/* 3. Jugador y Dungeon Master */}
                 <button
                   type="button"
                   onClick={() => setRegRole('both')}
-                  className={`py-2 px-1 rounded-xl text-xs font-cinzel font-bold border transition text-center ${
+                  className={`p-3 rounded-2xl border text-left transition flex flex-col items-center sm:items-start text-center sm:text-left ${
                     regRole === 'both'
-                      ? 'bg-gradient-to-r from-amber-600 to-purple-700 text-white border-amber-400 shadow-md'
-                      : 'bg-[#121316] text-stone-400 border-stone-800 hover:border-stone-700'
+                      ? 'bg-gradient-to-br from-amber-950 to-purple-950 border-amber-400 text-amber-100 shadow-md ring-1 ring-amber-400'
+                      : 'bg-[#121316] border-stone-800 text-stone-400 hover:border-stone-700'
                   }`}
                 >
-                  Ambos (DM & J)
+                  <Sparkles className="w-5 h-5 mb-1 text-amber-300" />
+                  <span className="font-cinzel font-bold text-xs text-stone-200 block">
+                    Jugador y Dungeon Master
+                  </span>
+                  <span className="text-[10px] text-stone-400 mt-0.5">
+                    Acceso dual completo
+                  </span>
                 </button>
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-stone-900 border border-stone-800 text-[11px] text-stone-400 leading-relaxed">
-              ℹ️ <strong>Aprobación Requerida:</strong> Por seguridad de la mesa, un Administrador revisará tu solicitud antes de conceder acceso.
+            <div className="p-3.5 rounded-2xl bg-[#121316] border border-amber-900/40 text-[11px] text-stone-300 leading-relaxed">
+              ℹ️ <strong>Revisión del Administrador:</strong> Al registrarte, tu cuenta quedará en estado de preaprobación. Una vez aprobada por el Administrador, podrás crear y guardar tus fichas o World Sheets.
             </div>
 
-            <div className="flex items-center justify-between pt-2">
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-cinzel font-bold text-sm shadow-xl transition transform hover:scale-[1.01] disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <UserPlus className="w-4 h-4" />
+              {isLoading ? 'Registrando cuenta...' : 'Crear Cuenta y Solicitar Aprobación'}
+            </button>
+
+            <div className="pt-2 text-center border-t border-stone-800/80">
               <button
                 type="button"
-                onClick={() => setAuthMode('login')}
-                className="text-xs text-stone-400 hover:text-stone-200"
+                onClick={() => {
+                  setErrorMessage('');
+                  setPendingNotice('');
+                  setRejectedNotice(null);
+                  setAuthMode('login');
+                }}
+                className="text-xs text-stone-400 hover:text-amber-300 transition flex items-center justify-center gap-1 mx-auto"
               >
-                ← Ya tengo cuenta
-              </button>
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-cinzel font-bold text-xs shadow-lg transition disabled:opacity-50"
-              >
-                {isLoading ? 'Registrando...' : 'Enviar Solicitud'}
+                <ArrowLeft className="w-3.5 h-3.5" />
+                ¿Ya tienes una cuenta registrada? <strong className="underline text-amber-400 ml-1">Inicia Sesión</strong>
               </button>
             </div>
           </form>
         )}
 
-        {/* 4. Direct Password Form for DM or Moderator */}
+        {/* =================================================================== */}
+        {/* 3. DIRECT ADMIN MASTER PASSWORD MODAL                               */}
+        {/* =================================================================== */}
         {authMode === 'adminPassword' && (
           <form onSubmit={handleDirectPasswordSubmit} className="space-y-4">
-            <div className="p-4 rounded-xl bg-[#121316] border border-stone-800">
+            <div className="p-4 rounded-2xl bg-[#121316] border border-blue-900/50">
               <div className="flex items-center gap-2.5 mb-2">
-                <Lock className={`w-5 h-5 ${selectedRole === 'dm' ? 'text-purple-400' : 'text-blue-400'}`} />
+                <Lock className="w-5 h-5 text-blue-400" />
                 <h3 className="font-cinzel font-bold text-base text-stone-200">
-                  {selectedRole === 'dm' ? 'Acceso al Dungeon Master' : 'Acceso de Administrador'}
+                  Acceso de Administrador Maestro
                 </h3>
               </div>
               <p className="text-xs text-stone-400 leading-relaxed">
-                {selectedRole === 'dm'
-                  ? 'Introduce la contraseña del Dungeon Master para acceder a sus World Sheets y expedientes confidenciales.'
-                  : 'Introduce la clave de acceso de Administrador para gestionar usuarios, bóveda y ajustes.'}
+                Introduce la contraseña maestra de moderador/administrador configurada en el servidor para acceder inmediatamente con permisos de gestión, bóveda y ajustes.
               </p>
             </div>
 
             <div>
               <label className="block text-xs font-cinzel font-bold uppercase tracking-wider text-stone-400 mb-1.5">
-                Contraseña
+                Contraseña Maestra de Administrador
               </label>
               <input
                 type="password"
@@ -545,7 +468,8 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
                 onChange={(e) => setEnteredPassword(e.target.value)}
                 placeholder="••••••••"
                 autoFocus
-                className="w-full bg-[#121316] border border-stone-700 focus:border-amber-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none"
+                required
+                className="w-full bg-[#121316] border border-stone-700 focus:border-blue-500 rounded-xl px-3.5 py-2.5 text-stone-100 text-sm font-mono outline-none transition"
               />
             </div>
 
@@ -553,23 +477,20 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setAuthMode('cards');
+                  setAuthMode('login');
                   setErrorMessage('');
                 }}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition flex items-center gap-1"
               >
-                ← Volver a roles
+                <ArrowLeft className="w-3.5 h-3.5" />
+                Volver a Iniciar Sesión
               </button>
 
               <button
                 type="submit"
-                className={`px-5 py-2.5 rounded-xl font-cinzel font-bold text-xs text-white shadow-lg transition ${
-                  selectedRole === 'dm'
-                    ? 'bg-purple-700 hover:bg-purple-600'
-                    : 'bg-blue-600 hover:bg-blue-500'
-                }`}
+                className="px-6 py-2.5 rounded-xl font-cinzel font-bold text-xs text-white bg-blue-600 hover:bg-blue-500 shadow-lg transition"
               >
-                Verificar & Entrar
+                Verificar & Acceder
               </button>
             </div>
           </form>

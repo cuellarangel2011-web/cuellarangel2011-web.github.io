@@ -172,6 +172,9 @@ export default function App() {
         } else if (type === 'COMBATANTS_UPDATE') {
           setShowCombatantsOnTable(payload.showCombatantsOnTable);
           setLiveCombatants(payload.liveCombatants || []);
+        } else if (type === 'SETTINGS_UPDATED') {
+          setHostSettings(payload);
+          saveHostSettings(payload);
         }
       };
 
@@ -179,6 +182,35 @@ export default function App() {
         channel.close();
       };
     }
+  }, []);
+
+  // Live synchronize host settings across all instances, browsers & computers
+  useEffect(() => {
+    let isMounted = true;
+    const syncHostSettings = async () => {
+      try {
+        const res = await fetch('/api/settings');
+        if (res.ok && isMounted) {
+          const fresh: HostSettings = await res.json();
+          if (fresh && typeof fresh === 'object') {
+            setHostSettings((prev) => {
+              if (JSON.stringify(prev) !== JSON.stringify(fresh)) {
+                saveHostSettings(fresh);
+                return fresh;
+              }
+              return prev;
+            });
+          }
+        }
+      } catch (err) {}
+    };
+
+    syncHostSettings();
+    const interval = setInterval(syncHostSettings, 3000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Send player heartbeat to room server
@@ -704,13 +736,27 @@ export default function App() {
     setHostSettings(newSettings);
     saveHostSettings(newSettings);
     try {
-      await fetch('/api/settings', {
+      const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSettings),
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.settings) {
+          setHostSettings(data.settings);
+          saveHostSettings(data.settings);
+        }
+      }
     } catch (e) {
       console.error(e);
+    }
+
+    if (broadcastChannelRef.current) {
+      broadcastChannelRef.current.postMessage({
+        type: 'SETTINGS_UPDATED',
+        payload: newSettings,
+      });
     }
   };
 
@@ -735,7 +781,7 @@ export default function App() {
                   {hostSettings.headerTitle || 'WeRoll'}
                 </span>
                 <span className="text-[10px] text-stone-400 font-cinzel font-semibold tracking-wider block">
-                  {hostSettings.headerSubtitle || 'Companion & DM Suite v0.1'}
+                  {hostSettings.headerSubtitle || 'Companion & DM Suite v0.4'}
                 </span>
               </div>
             </button>
