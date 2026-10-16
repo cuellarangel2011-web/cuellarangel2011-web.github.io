@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Shield,
   User,
@@ -27,6 +27,13 @@ import {
   X,
   ExternalLink,
   ChevronRight,
+  Database,
+  FileDown,
+  FileText,
+  Calendar,
+  Tag,
+  FileUp,
+  RotateCcw,
 } from 'lucide-react';
 import {
   Character5e,
@@ -34,6 +41,7 @@ import {
   HostSettings,
   UserRole,
   WorldSheetSummary,
+  ChangelogEntry,
 } from '../../types/dnd';
 import { AuthSessionUser } from '../auth/RoleSelectionModal';
 import { SAMPLE_CHARACTER, SAMPLE_DM_WORKSPACE } from '../../data/srd';
@@ -120,10 +128,42 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
   const [worldToDelete, setWorldToDelete] = useState<WorldSheetSummary | null>(null);
 
   // Admin state
+  const [adminSubTab, setAdminSubTab] = useState<'users' | 'vault' | 'updates' | 'settings'>('users');
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
   const [adminSettingsForm, setAdminSettingsForm] = useState<HostSettings>(hostSettings);
   const [adminSaveMessage, setAdminSaveMessage] = useState<string>('');
+
+  // AI Model selector state
+  const isPresetModel =
+    adminSettingsForm.aiModel === 'gemini-flash-lite-latest' ||
+    adminSettingsForm.aiModel === 'gemini-flash-latest';
+  const [isCustomAiModel, setIsCustomAiModel] = useState<boolean>(!isPresetModel);
+  const [customAiModelText, setCustomAiModelText] = useState<string>(
+    isPresetModel ? '' : adminSettingsForm.aiModel || ''
+  );
+
+  // Vault state
+  const [vaultDetails, setVaultDetails] = useState<{ sheets: any[]; worlds: any[]; backups: any[] }>({
+    sheets: [],
+    worlds: [],
+    backups: [],
+  });
+  const [isLoadingVault, setIsLoadingVault] = useState<boolean>(false);
+  const [vaultFilter, setVaultFilter] = useState<'all' | 'sheets' | 'worlds' | 'backups'>('all');
+  const [restoreLoading, setRestoreLoading] = useState<boolean>(false);
+  const [restoreMessage, setRestoreMessage] = useState<string>('');
+  const [restoreError, setRestoreError] = useState<string>('');
+  const restoreFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Changelog admin state
+  const [changelogList, setChangelogList] = useState<ChangelogEntry[]>(() => hostSettings.changelog || []);
+  const [isChangelogEditModalOpen, setIsChangelogEditModalOpen] = useState<boolean>(false);
+  const [editingChangelogIdx, setEditingChangelogIdx] = useState<number>(-1);
+  const [changelogFormVersion, setChangelogFormVersion] = useState<string>('0.2');
+  const [changelogFormTitle, setChangelogFormTitle] = useState<string>('');
+  const [changelogFormDate, setChangelogFormDate] = useState<string>('');
+  const [changelogFormChanges, setChangelogFormChanges] = useState<string>('');
 
   // Player Characters filtered by account
   const [playerSheets, setPlayerSheets] = useState<Character5e[]>([]);
@@ -165,12 +205,50 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
     }
   };
 
+  // Fetch vault details (sheets, worlds, backups)
+  const fetchVaultDetails = async () => {
+    if (!isModerator) return;
+    setIsLoadingVault(true);
+    try {
+      const res = await fetch('/api/admin/vault/details');
+      if (res.ok) {
+        const data = await res.json();
+        setVaultDetails({
+          sheets: data.sheets || [],
+          worlds: data.worlds || [],
+          backups: data.backups || [],
+        });
+      }
+    } catch (err) {
+      console.error('Error loading vault details:', err);
+    } finally {
+      setIsLoadingVault(false);
+    }
+  };
+
+  // Fetch changelog list for admin
+  const fetchAdminChangelog = async () => {
+    try {
+      const res = await fetch('/api/admin/changelog');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.changelog)) {
+          setChangelogList(data.changelog);
+        }
+      }
+    } catch (err) {
+      console.error('Error loading changelog:', err);
+    }
+  };
+
   useEffect(() => {
     if (authUser && authUser.status === 'approved') {
       fetchUserSheets();
     }
     if (isModerator && activeTab === 'admin') {
       fetchAdminUsers();
+      fetchVaultDetails();
+      fetchAdminChangelog();
     }
   }, [authUser?.email, authUser?.status, activeTab, isModerator]);
 
@@ -264,6 +342,22 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
     }
   };
 
+  // Admin user role modification
+  const handleAdminChangeRole = async (userId: string, role: string) => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      if (res.ok) {
+        fetchAdminUsers();
+      }
+    } catch (e) {
+      console.error('Error changing role:', e);
+    }
+  };
+
   // Admin user approval toggle
   const handleAdminApproveUser = async (userId: string) => {
     try {
@@ -287,15 +381,147 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
     }
   };
 
+  // Handle uploading and restoring a backup JSON file to the vault
+  const handleRestoreFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setRestoreMessage('');
+    setRestoreError('');
+    setRestoreLoading(true);
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
+
+        const res = await fetch('/api/admin/vault/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed),
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Error al restaurar información de respaldo.');
+        }
+
+        setRestoreMessage(data.message || 'Respaldo restaurado con éxito en el servidor.');
+        // Refresh vault & sheets lists
+        fetchVaultDetails();
+        fetchUserSheets();
+      } catch (err: any) {
+        setRestoreError(err.message || 'El archivo seleccionado no es un JSON de respaldo válido.');
+      } finally {
+        setRestoreLoading(false);
+        if (restoreFileInputRef.current) {
+          restoreFileInputRef.current.value = '';
+        }
+      }
+    };
+
+    reader.onerror = () => {
+      setRestoreError('No se pudo leer el archivo seleccionado.');
+      setRestoreLoading(false);
+    };
+
+    reader.readAsText(file);
+  };
+
+  // Changelog admin actions
+  const handleOpenNewChangelogModal = () => {
+    setEditingChangelogIdx(-1);
+    setChangelogFormVersion(`0.${(changelogList.length + 1) * 1}`);
+    setChangelogFormTitle('');
+    setChangelogFormDate(new Date().toISOString().split('T')[0]);
+    setChangelogFormChanges('');
+    setIsChangelogEditModalOpen(true);
+  };
+
+  const handleOpenEditChangelogModal = (entry: ChangelogEntry, idx: number) => {
+    setEditingChangelogIdx(idx);
+    setChangelogFormVersion(entry.version);
+    setChangelogFormTitle(entry.title);
+    setChangelogFormDate(entry.date);
+    setChangelogFormChanges(entry.changes.join('\n'));
+    setIsChangelogEditModalOpen(true);
+  };
+
+  const handleSaveChangelogSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const changesArray = changelogFormChanges
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    const payload = {
+      version: changelogFormVersion.trim(),
+      title: changelogFormTitle.trim(),
+      date: changelogFormDate.trim(),
+      changes: changesArray.length > 0 ? changesArray : ['Actualización de sistema'],
+    };
+
+    try {
+      let res;
+      if (editingChangelogIdx === -1) {
+        res = await fetch('/api/admin/changelog', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        res = await fetch(`/api/admin/changelog/${editingChangelogIdx}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        setChangelogList(data.changelog || []);
+        setIsChangelogEditModalOpen(false);
+      }
+    } catch (err) {
+      console.error('Error saving changelog entry:', err);
+    }
+  };
+
+  const handleDeleteChangelogSubmit = async (idx: number) => {
+    if (!window.confirm('¿Estás seguro de eliminar esta entrada de actualización?')) return;
+    try {
+      const res = await fetch(`/api/admin/changelog/${idx}`, { method: 'DELETE' });
+      if (res.ok) {
+        const data = await res.json();
+        setChangelogList(data.changelog || []);
+      }
+    } catch (err) {
+      console.error('Error deleting changelog entry:', err);
+    }
+  };
+
   const handleAdminSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminSaveMessage('');
+
+    // Determine final AI model
+    const finalAiModel = isCustomAiModel
+      ? (customAiModelText.trim() || 'gemini-flash-lite-latest')
+      : (adminSettingsForm.aiModel || 'gemini-flash-lite-latest');
+
+    const updatedSettings: HostSettings = {
+      ...adminSettingsForm,
+      aiModel: finalAiModel,
+    };
+
     try {
-      await onSaveHostSettings(adminSettingsForm);
-      setAdminSaveMessage('¡Ajustes guardados con éxito en el servidor!');
+      await onSaveHostSettings(updatedSettings);
+      setAdminSettingsForm(updatedSettings);
+      setAdminSaveMessage('¡Ajustes y modelos guardados con éxito en el servidor!');
       setTimeout(() => setAdminSaveMessage(''), 4000);
     } catch (e) {
-      setAdminSaveMessage('Error al guardar ajustes.');
+      setAdminSaveMessage('Error al guardar ajustes en el servidor.');
     }
   };
 
@@ -394,6 +620,47 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
             <button
               onClick={onLogout}
               className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-cinzel text-xs transition flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // VIEW: REJECTED USER SCREEN
+  // ==========================================
+  if (authUser.status === 'rejected') {
+    const customRejection =
+      hostSettings.rejectionCustomMessage ||
+      'Lo lamentamos, por el momento no puedes acceder a WeRoll. Manda mensaje a soporte@weroll.app si quieres una revisión manual de tu caso.';
+    return (
+      <div className="min-h-[85vh] flex flex-col items-center justify-center p-4">
+        <div className="max-w-lg w-full bg-[#181920] border-2 border-red-700/80 rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden animate-in fade-in">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-red-950/80 border border-red-600/80 text-red-400 mb-5 shadow-lg">
+            <X className="w-8 h-8" />
+          </div>
+
+          <span className="px-3 py-1 rounded-full text-[11px] font-cinzel font-bold tracking-wider bg-red-950 border border-red-600/70 text-red-300 uppercase">
+            Aprobación Rechazada
+          </span>
+
+          <h2 className="font-cinzel font-black text-2xl text-stone-100 mt-4">
+            Solicitud no Aprobada
+          </h2>
+
+          <div className="mt-5 p-4 rounded-2xl bg-[#121316] border border-red-900/60 text-left text-xs text-stone-200 leading-relaxed font-sans">
+            <p className="font-semibold text-red-300 mb-2 font-cinzel">Mensaje de la Administración:</p>
+            <p className="text-stone-300">{customRejection}</p>
+          </div>
+
+          <div className="mt-8 flex justify-center">
+            <button
+              onClick={onLogout}
+              className="px-6 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-cinzel font-bold text-xs shadow-lg transition flex items-center justify-center gap-2"
             >
               <LogOut className="w-4 h-4" />
               Cerrar Sesión
@@ -799,202 +1066,879 @@ export const LobbyPortalView: React.FC<LobbyPortalViewProps> = ({
       {activeTab === 'admin' && isModerator && (
         <div className="space-y-8 animate-in fade-in">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-stone-800 pb-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-800 pb-4">
             <div>
-              <h2 className="font-cinzel font-bold text-xl text-blue-300 flex items-center gap-2">
-                <Shield className="w-5 h-5 text-blue-400" />
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-cinzel font-bold bg-blue-950 border border-blue-600/70 text-blue-300 uppercase tracking-widest">
+                  Acceso Restringido
+                </span>
+                <span className="text-xs text-stone-400">Moderador: {authUser.displayName}</span>
+              </div>
+              <h2 className="font-cinzel font-black text-2xl text-stone-100 flex items-center gap-2.5 mt-1">
+                <Shield className="w-6 h-6 text-blue-400" />
                 Panel de Control de Administrador
               </h2>
-              <p className="text-xs text-stone-400 mt-0.5">
-                Gestión de cuentas de usuario, bóveda de copias de seguridad de la base de datos y configuración del servidor.
+              <p className="text-xs text-stone-400 mt-1">
+                Gestión de cuentas y roles, bóveda de copias de seguridad de la base de datos, blog de actualizaciones y configuración de IA.
               </p>
             </div>
 
-            <a
-              href="/api/vault/backup-all"
-              download
-              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Descargar Respaldo Total (JSON)
-            </a>
+            <div className="flex items-center gap-2 flex-wrap">
+              <a
+                href="/api/vault/backup-all"
+                download
+                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
+                title="Descarga una copia completa de la base de datos en formato JSON"
+              >
+                <Download className="w-4 h-4" />
+                Descargar Respaldo Total
+              </a>
+            </div>
           </div>
 
-          {/* Section A: User Management & Approvals */}
-          <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
+          {/* Sub-tabs Navigation */}
+          <div className="flex items-center gap-2 border-b border-stone-800/80 pb-2 overflow-x-auto">
+            <button
+              onClick={() => setAdminSubTab('users')}
+              className={`px-4 py-2 rounded-xl font-cinzel font-bold text-xs transition flex items-center gap-2 shrink-0 ${
+                adminSubTab === 'users'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-stone-900 text-stone-400 hover:text-stone-200 hover:bg-stone-800'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Gestión de Cuentas y Roles ({adminUsers.length})
+            </button>
+
+            <button
+              onClick={() => {
+                setAdminSubTab('vault');
+                fetchVaultDetails();
+              }}
+              className={`px-4 py-2 rounded-xl font-cinzel font-bold text-xs transition flex items-center gap-2 shrink-0 ${
+                adminSubTab === 'vault'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-stone-900 text-stone-400 hover:text-stone-200 hover:bg-stone-800'
+              }`}
+            >
+              <Database className="w-4 h-4" />
+              Bóveda y Copias de Seguridad ({vaultDetails.sheets.length + vaultDetails.worlds.length})
+            </button>
+
+            <button
+              onClick={() => {
+                setAdminSubTab('updates');
+                fetchAdminChangelog();
+              }}
+              className={`px-4 py-2 rounded-xl font-cinzel font-bold text-xs transition flex items-center gap-2 shrink-0 ${
+                adminSubTab === 'updates'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-stone-900 text-stone-400 hover:text-stone-200 hover:bg-stone-800'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              Blog de Novedades y Versiones ({changelogList.length})
+            </button>
+
+            <button
+              onClick={() => setAdminSubTab('settings')}
+              className={`px-4 py-2 rounded-xl font-cinzel font-bold text-xs transition flex items-center gap-2 shrink-0 ${
+                adminSubTab === 'settings'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'bg-stone-900 text-stone-400 hover:text-stone-200 hover:bg-stone-800'
+              }`}
+            >
+              <Settings className="w-4 h-4" />
+              Configuración del Servidor y Modelos IA
+            </button>
+          </div>
+
+          {/* =================================================================== */}
+          {/* SUB-TAB 1: USER MANAGEMENT & ROLE ASSIGNMENT                        */}
+          {/* =================================================================== */}
+          {adminSubTab === 'users' && (
+            <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-cinzel font-bold text-base text-stone-100 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-blue-400" />
+                    Cuentas Registradas en WeRoll
+                  </h3>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Aprueba o rechaza solicitudes y modifica los roles asignados a cada usuario.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={fetchAdminUsers}
+                    disabled={isLoadingUsers}
+                    className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-cinzel transition flex items-center gap-1.5"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                    Actualizar
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-stone-800 text-stone-500 font-cinzel">
+                      <th className="py-2.5 px-3">Usuario & Correo</th>
+                      <th className="py-2.5 px-3">Rol Asignado</th>
+                      <th className="py-2.5 px-3">Estado de Aprobación</th>
+                      <th className="py-2.5 px-3">Registro</th>
+                      <th className="py-2.5 px-3 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-800/60">
+                    {adminUsers.map((u) => (
+                      <tr key={u.id} className="hover:bg-stone-800/30">
+                        <td className="py-3 px-3">
+                          <span className="font-semibold text-stone-200 block text-xs">{u.displayName}</span>
+                          <span className="font-mono text-[11px] text-stone-400">{u.email}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <select
+                            value={u.role}
+                            onChange={(e) => handleAdminChangeRole(u.id, e.target.value)}
+                            className="bg-[#121316] border border-stone-700 rounded-lg px-2.5 py-1 text-xs text-amber-300 font-cinzel font-semibold outline-none focus:border-blue-500"
+                          >
+                            <option value="moderator">Moderador / Admin</option>
+                            <option value="both">DM y Jugador</option>
+                            <option value="dm">Dungeon Master únicamente</option>
+                            <option value="player">Jugador únicamente</option>
+                          </select>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[10px] font-cinzel font-bold uppercase inline-block ${
+                              u.status === 'approved'
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                : u.status === 'pending'
+                                ? 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
+                                : 'bg-red-950 text-red-300 border border-red-800'
+                            }`}
+                          >
+                            {u.status === 'approved'
+                              ? 'Aprobado'
+                              : u.status === 'pending'
+                              ? 'Pendiente por Aprobar'
+                              : 'Rechazado'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-stone-400 font-mono text-[11px]">
+                          {new Date(u.registeredAt || Date.now()).toLocaleDateString()}
+                        </td>
+                        <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
+                          {u.status !== 'approved' && (
+                            <button
+                              onClick={() => handleAdminApproveUser(u.id)}
+                              className="px-3 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-cinzel font-bold text-xs transition shadow"
+                            >
+                              Aprobar
+                            </button>
+                          )}
+                          {u.status !== 'rejected' && u.role !== 'moderator' && (
+                            <button
+                              onClick={() => handleAdminRejectUser(u.id)}
+                              className="px-3 py-1 rounded-lg bg-red-900/60 hover:bg-red-800 text-red-200 font-cinzel font-bold text-xs transition border border-red-800/60"
+                            >
+                              Rechazar
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================== */}
+          {/* SUB-TAB 2: BÓVEDA DE COPIAS DE SEGURIDAD (VAULT)                    */}
+          {/* =================================================================== */}
+          {adminSubTab === 'vault' && (
+            <div className="space-y-6">
+              {/* Top Action Bar for Vault */}
+              <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <h3 className="font-cinzel font-bold text-base text-stone-100 flex items-center gap-2">
+                    <Database className="w-5 h-5 text-blue-400" />
+                    Bóveda Central de Respaldos
+                  </h3>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Descarga copias individuales de fichas y campañas, o sube archivos de respaldo para restaurarlos en el servidor.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Hidden file input for restore */}
+                  <input
+                    type="file"
+                    ref={restoreFileInputRef}
+                    accept=".json,application/json"
+                    onChange={handleRestoreFileChange}
+                    className="hidden"
+                  />
+
+                  <button
+                    onClick={() => restoreFileInputRef.current?.click()}
+                    disabled={restoreLoading}
+                    className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
+                  >
+                    <Upload className="w-4 h-4" />
+                    {restoreLoading ? 'Restaurando...' : 'Subir / Restaurar Respaldo (JSON)'}
+                  </button>
+
+                  <a
+                    href="/api/vault/backup-all"
+                    download
+                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Descargar Respaldo Total
+                  </a>
+                </div>
+              </div>
+
+              {/* Restore Alert Messages */}
+              {restoreMessage && (
+                <div className="p-4 rounded-2xl bg-emerald-950/80 border border-emerald-600 text-emerald-200 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <span>{restoreMessage}</span>
+                  </div>
+                  <button onClick={() => setRestoreMessage('')} className="p-1 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {restoreError && (
+                <div className="p-4 rounded-2xl bg-red-950/80 border border-red-600 text-red-200 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+                  <div className="flex items-center gap-2.5">
+                    <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+                    <span>{restoreError}</span>
+                  </div>
+                  <button onClick={() => setRestoreError('')} className="p-1 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-2 border-b border-stone-800 pb-2">
+                <button
+                  onClick={() => setVaultFilter('all')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-cinzel font-semibold transition ${
+                    vaultFilter === 'all'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+                  }`}
+                >
+                  Todos los Registros
+                </button>
+                <button
+                  onClick={() => setVaultFilter('sheets')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-cinzel font-semibold transition ${
+                    vaultFilter === 'sheets'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+                  }`}
+                >
+                  Fichas de Jugador ({vaultDetails.sheets.length})
+                </button>
+                <button
+                  onClick={() => setVaultFilter('worlds')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-cinzel font-semibold transition ${
+                    vaultFilter === 'worlds'
+                      ? 'bg-purple-700 text-white'
+                      : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+                  }`}
+                >
+                  World Sheets del DM ({vaultDetails.worlds.length})
+                </button>
+                <button
+                  onClick={() => setVaultFilter('backups')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-cinzel font-semibold transition ${
+                    vaultFilter === 'backups'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+                  }`}
+                >
+                  Respaldos Rotativos de Sesión ({vaultDetails.backups.length})
+                </button>
+              </div>
+
+              {/* 1. Player Sheets Table */}
+              {(vaultFilter === 'all' || vaultFilter === 'sheets') && (
+                <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-cinzel font-bold text-sm text-amber-300 flex items-center gap-2">
+                      <User className="w-4 h-4 text-amber-400" />
+                      Fichas de Jugador en Bóveda ({vaultDetails.sheets.length})
+                    </h4>
+                    <span className="text-[11px] text-stone-500 font-cinzel">Descarga individual disponible</span>
+                  </div>
+
+                  {vaultDetails.sheets.length === 0 ? (
+                    <p className="text-xs text-stone-500 py-4 text-center">No hay fichas de jugador guardadas en la bóveda.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-stone-800 text-stone-500 font-cinzel">
+                            <th className="py-2 px-3">Personaje</th>
+                            <th className="py-2 px-3">Propietario</th>
+                            <th className="py-2 px-3">Clase & Raza</th>
+                            <th className="py-2 px-3">Nivel / PG</th>
+                            <th className="py-2 px-3">Última Modificación</th>
+                            <th className="py-2 px-3 text-right">Descarga</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-800/60">
+                          {vaultDetails.sheets.map((s) => (
+                            <tr key={s.id} className="hover:bg-stone-800/30">
+                              <td className="py-2.5 px-3 font-semibold text-stone-200">{s.name}</td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-stone-400">{s.ownerEmail}</td>
+                              <td className="py-2.5 px-3 text-stone-300">
+                                {s.character?.race} {s.character?.characterClass}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-stone-300">
+                                Nv. {s.character?.level} • {s.character?.currentHp}/{s.character?.maxHp} PG
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-stone-500">
+                                {new Date(s.updatedAt || Date.now()).toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <a
+                                  href={`/api/admin/vault/sheet/${s.id}/download`}
+                                  download
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-950/80 hover:bg-amber-900 border border-amber-700/60 text-amber-300 font-cinzel font-bold text-[11px] transition shadow"
+                                >
+                                  <FileDown className="w-3.5 h-3.5" />
+                                  Descargar JSON
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 2. World Sheets Table */}
+              {(vaultFilter === 'all' || vaultFilter === 'worlds') && (
+                <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-cinzel font-bold text-sm text-purple-300 flex items-center gap-2">
+                      <Crown className="w-4 h-4 text-purple-400" />
+                      World Sheets del Dungeon Master en Bóveda ({vaultDetails.worlds.length})
+                    </h4>
+                    <span className="text-[11px] text-stone-500 font-cinzel">Descarga individual disponible</span>
+                  </div>
+
+                  {vaultDetails.worlds.length === 0 ? (
+                    <p className="text-xs text-stone-500 py-4 text-center">No hay World Sheets guardados en la bóveda.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-stone-800 text-stone-500 font-cinzel">
+                            <th className="py-2 px-3">Campaña / Mundo</th>
+                            <th className="py-2 px-3">Mesa & Contraseña</th>
+                            <th className="py-2 px-3">Propietario DM</th>
+                            <th className="py-2 px-3">Contenido Archivero</th>
+                            <th className="py-2 px-3">Última Modificación</th>
+                            <th className="py-2 px-3 text-right">Descarga</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-800/60">
+                          {vaultDetails.worlds.map((w) => (
+                            <tr key={w.id} className="hover:bg-stone-800/30">
+                              <td className="py-2.5 px-3 font-semibold text-stone-200">{w.name}</td>
+                              <td className="py-2.5 px-3">
+                                <span className="font-mono text-amber-300 font-bold bg-[#121316] px-2 py-0.5 rounded border border-stone-800 mr-1.5">
+                                  {w.roomCode}
+                                </span>
+                                {w.roomPassword ? (
+                                  <span className="text-[10px] text-amber-400 font-cinzel">Con Clave</span>
+                                ) : (
+                                  <span className="text-[10px] text-stone-500 font-cinzel">Abierta</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-stone-400">{w.ownerEmail}</td>
+                              <td className="py-2.5 px-3 text-stone-300 text-[11px]">
+                                {w.workspace?.npcs?.length || 0} NPCs • {w.workspace?.monsters?.length || 0} Monstruos • {w.workspace?.locations?.length || 0} Lugares
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-stone-500">
+                                {new Date(w.updatedAt || Date.now()).toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <a
+                                  href={`/api/admin/vault/world/${w.id}/download`}
+                                  download
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-950/80 hover:bg-purple-900 border border-purple-700/60 text-purple-300 font-cinzel font-bold text-[11px] transition shadow"
+                                >
+                                  <FileDown className="w-3.5 h-3.5" />
+                                  Descargar JSON
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 3. Rotating Backups Table */}
+              {(vaultFilter === 'all' || vaultFilter === 'backups') && (
+                <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-cinzel font-bold text-sm text-blue-300 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-blue-400" />
+                      Respaldos Rotativos de Sesión ({vaultDetails.backups.length})
+                    </h4>
+                    <span className="text-[11px] text-stone-500 font-cinzel">2 versiones por sesión por jugador</span>
+                  </div>
+
+                  {vaultDetails.backups.length === 0 ? (
+                    <p className="text-xs text-stone-500 py-4 text-center">No hay respaldos rotativos registrados aún.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-stone-800 text-stone-500 font-cinzel">
+                            <th className="py-2 px-3">Personaje</th>
+                            <th className="py-2 px-3">Propietario</th>
+                            <th className="py-2 px-3">Slots Guardados</th>
+                            <th className="py-2 px-3">Última Rotación</th>
+                            <th className="py-2 px-3 text-right">Descarga</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-800/60">
+                          {vaultDetails.backups.map((b) => (
+                            <tr key={b.characterId} className="hover:bg-stone-800/30">
+                              <td className="py-2.5 px-3 font-semibold text-stone-200">{b.characterName}</td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-stone-400">{b.ownerEmail}</td>
+                              <td className="py-2.5 px-3">
+                                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#121316] border border-stone-700 text-amber-300">
+                                  {b.slots?.length || 0} / 2 Versiones
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-stone-500">
+                                {new Date(b.lastRotatedAt || Date.now()).toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-3 text-right">
+                                <a
+                                  href={`/api/admin/vault/backup/${b.characterId}/download`}
+                                  download
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-950/80 hover:bg-blue-900 border border-blue-700/60 text-blue-300 font-cinzel font-bold text-[11px] transition shadow"
+                                >
+                                  <FileDown className="w-3.5 h-3.5" />
+                                  Descargar JSON
+                                </a>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =================================================================== */}
+          {/* SUB-TAB 3: BLOG DE NOVEDADES Y VERSIONES (CHANGELOG)                 */}
+          {/* =================================================================== */}
+          {adminSubTab === 'updates' && (
+            <div className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-stone-800 pb-4">
+                <div>
+                  <h3 className="font-cinzel font-bold text-base text-stone-100 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    Administrador de Novedades y Registro de Versiones
+                  </h3>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Publica nuevas versiones, edita las notas de versiones anteriores o elimínalas del registro público.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleOpenNewChangelogModal}
+                  className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Publicar Nueva Actualización
+                </button>
+              </div>
+
+              {changelogList.length === 0 ? (
+                <p className="text-xs text-stone-500 py-6 text-center">No hay entradas de actualización en el blog.</p>
+              ) : (
+                <div className="space-y-4">
+                  {changelogList.map((entry, idx) => (
+                    <div
+                      key={entry.version + idx}
+                      className="bg-[#121318] border border-stone-800 hover:border-amber-700/50 rounded-2xl p-4.5 transition shadow"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-600 text-white shadow">
+                            v{entry.version}
+                          </span>
+                          <h4 className="font-cinzel font-bold text-sm text-stone-100">{entry.title}</h4>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-mono text-stone-400 flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 text-stone-500" />
+                            {entry.date}
+                          </span>
+
+                          <button
+                            onClick={() => handleOpenEditChangelogModal(entry, idx)}
+                            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 transition"
+                            title="Editar esta versión"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteChangelogSubmit(idx)}
+                            className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 text-red-400 transition"
+                            title="Eliminar del historial"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <ul className="space-y-1.5 mt-2 pl-2">
+                        {entry.changes.map((c, cIdx) => (
+                          <li key={cIdx} className="text-xs text-stone-300 leading-relaxed flex items-start gap-2">
+                            <span className="text-amber-500 font-bold shrink-0">•</span>
+                            <span>{c}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =================================================================== */}
+          {/* SUB-TAB 4: SERVER SETTINGS & AI MODELS CONFIGURATION                */}
+          {/* =================================================================== */}
+          {adminSubTab === 'settings' && (
+            <form onSubmit={handleAdminSaveSettings} className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-6">
               <div>
                 <h3 className="font-cinzel font-bold text-base text-stone-100 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-amber-400" />
-                  Usuarios Registrados en el Servidor
+                  <Settings className="w-4 h-4 text-blue-400" />
+                  Configuración del Servidor y Modelos IA
                 </h3>
                 <p className="text-xs text-stone-400 mt-0.5">
-                  Aprueba o rechaza solicitudes de nuevos jugadores y Dungeon Masters.
+                  Personaliza títulos, selección de modelos Gemini oficiales, clave de moderador y mensaje de rechazo de cuentas.
                 </p>
               </div>
 
-              <button
-                onClick={fetchAdminUsers}
-                disabled={isLoadingUsers}
-                className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-cinzel transition flex items-center gap-1.5"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingUsers ? 'animate-spin' : ''}`} />
-                Actualizar Lista
-              </button>
-            </div>
+              {adminSaveMessage && (
+                <div className="p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{adminSaveMessage}</span>
+                </div>
+              )}
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-stone-800 text-stone-500 font-cinzel">
-                    <th className="py-2.5 px-3">Nombre</th>
-                    <th className="py-2.5 px-3">Correo</th>
-                    <th className="py-2.5 px-3">Rol</th>
-                    <th className="py-2.5 px-3">Estado</th>
-                    <th className="py-2.5 px-3 text-right">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-800/60">
-                  {adminUsers.map((u) => (
-                    <tr key={u.id} className="hover:bg-stone-800/30">
-                      <td className="py-2.5 px-3 font-semibold text-stone-200">{u.displayName}</td>
-                      <td className="py-2.5 px-3 font-mono text-stone-400">{u.email}</td>
-                      <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-cinzel font-bold bg-[#121316] border border-stone-700 text-stone-300 uppercase">
-                          {u.role === 'both' ? 'DM & Jugador' : u.role}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            u.status === 'approved'
-                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
-                              : u.status === 'pending'
-                              ? 'bg-amber-950 text-amber-300 border border-amber-800 animate-pulse'
-                              : 'bg-red-950 text-red-300 border border-red-800'
-                          }`}
-                        >
-                          {u.status === 'approved' ? 'Aprobado' : u.status === 'pending' ? 'Pendiente' : 'Rechazado'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right space-x-1.5">
-                        {u.status !== 'approved' && (
-                          <button
-                            onClick={() => handleAdminApproveUser(u.id)}
-                            className="px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white font-cinzel font-bold text-[10px] transition"
-                          >
-                            Aprobar
-                          </button>
-                        )}
-                        {u.status !== 'rejected' && u.role !== 'moderator' && (
-                          <button
-                            onClick={() => handleAdminRejectUser(u.id)}
-                            className="px-2.5 py-1 rounded bg-red-900/60 hover:bg-red-800 text-red-200 font-cinzel font-bold text-[10px] transition"
-                          >
-                            Rechazar
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+              {/* General App Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                    Título de la Aplicación
+                  </label>
+                  <input
+                    type="text"
+                    value={adminSettingsForm.headerTitle || ''}
+                    onChange={(e) => setAdminSettingsForm({ ...adminSettingsForm, headerTitle: e.target.value })}
+                    className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs outline-none focus:border-blue-500"
+                  />
+                </div>
 
-          {/* Section B: Server Settings & AI Configuration */}
-          <form onSubmit={handleAdminSaveSettings} className="bg-[#161720] border border-stone-800 rounded-3xl p-6 shadow-xl space-y-5">
-            <div>
-              <h3 className="font-cinzel font-bold text-base text-stone-100 flex items-center gap-2">
-                <Settings className="w-4 h-4 text-blue-400" />
-                Configuración del Servidor y Modelos IA
-              </h3>
-              <p className="text-xs text-stone-400 mt-0.5">
-                Personaliza títulos, modelo Gemini para el Sabio Arcano y anuncios para los usuarios.
-              </p>
-            </div>
+                <div>
+                  <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                    Subtítulo / Versión
+                  </label>
+                  <input
+                    type="text"
+                    value={adminSettingsForm.headerSubtitle || ''}
+                    onChange={(e) => setAdminSettingsForm({ ...adminSettingsForm, headerSubtitle: e.target.value })}
+                    className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs outline-none focus:border-blue-500"
+                  />
+                </div>
 
-            {adminSaveMessage && (
-              <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-600 text-emerald-300 text-xs">
-                {adminSaveMessage}
+                <div>
+                  <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                    Contraseña Maestra de Moderador
+                  </label>
+                  <input
+                    type="text"
+                    value={adminSettingsForm.moderatorPassword || 'admin'}
+                    onChange={(e) => setAdminSettingsForm({ ...adminSettingsForm, moderatorPassword: e.target.value })}
+                    className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs font-mono outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                    Gemini API Key (Opcional - Servidor usa env por defecto)
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="AIzaSy..."
+                    value={adminSettingsForm.apiKeyOverride || ''}
+                    onChange={(e) => setAdminSettingsForm({ ...adminSettingsForm, apiKeyOverride: e.target.value })}
+                    className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs font-mono outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
-            )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
-                  Título de la Aplicación
+              {/* Gemini Models Selection (Only Gemini Flash Light Latest & Gemini Flash Latest + Manual custom option) */}
+              <div className="p-4 rounded-2xl bg-[#121316] border border-stone-800 space-y-3">
+                <label className="block text-xs font-cinzel font-bold uppercase text-blue-300">
+                  Modelo Gemini para El Sabio Arcano y Asistente IA
                 </label>
-                <input
-                  type="text"
-                  value={adminSettingsForm.headerTitle || ''}
-                  onChange={(e) => setAdminSettingsForm({ ...adminSettingsForm, headerTitle: e.target.value })}
-                  className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs outline-none focus:border-blue-500"
+                <p className="text-[11px] text-stone-400">
+                  Selecciona uno de los dos modelos recomendados o introduce manualmente el nombre de versión que desees.
+                </p>
+
+                <div className="space-y-2 pt-1">
+                  <label className="flex items-center gap-2.5 p-2.5 rounded-xl border border-stone-800 hover:border-blue-600/60 bg-[#161720] cursor-pointer transition">
+                    <input
+                      type="radio"
+                      name="aiModelSelect"
+                      checked={!isCustomAiModel && adminSettingsForm.aiModel === 'gemini-flash-lite-latest'}
+                      onChange={() => {
+                        setIsCustomAiModel(false);
+                        setAdminSettingsForm({ ...adminSettingsForm, aiModel: 'gemini-flash-lite-latest' });
+                      }}
+                      className="accent-blue-500"
+                    />
+                    <div>
+                      <span className="font-cinzel font-bold text-xs text-stone-200 block">Gemini Flash Light Latest</span>
+                      <span className="text-[11px] text-stone-400">Alta velocidad y bajo consumo (gemini-flash-lite-latest)</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 p-2.5 rounded-xl border border-stone-800 hover:border-blue-600/60 bg-[#161720] cursor-pointer transition">
+                    <input
+                      type="radio"
+                      name="aiModelSelect"
+                      checked={!isCustomAiModel && adminSettingsForm.aiModel === 'gemini-flash-latest'}
+                      onChange={() => {
+                        setIsCustomAiModel(false);
+                        setAdminSettingsForm({ ...adminSettingsForm, aiModel: 'gemini-flash-latest' });
+                      }}
+                      className="accent-blue-500"
+                    />
+                    <div>
+                      <span className="font-cinzel font-bold text-xs text-stone-200 block">Gemini Flash Latest</span>
+                      <span className="text-[11px] text-stone-400">Excelente equilibrio de razonamiento y rapidez (gemini-flash-latest)</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 p-2.5 rounded-xl border border-stone-800 hover:border-blue-600/60 bg-[#161720] cursor-pointer transition">
+                    <input
+                      type="radio"
+                      name="aiModelSelect"
+                      checked={isCustomAiModel}
+                      onChange={() => setIsCustomAiModel(true)}
+                      className="accent-blue-500"
+                    />
+                    <div>
+                      <span className="font-cinzel font-bold text-xs text-stone-200 block">Especificar Versión Manualmente</span>
+                      <span className="text-[11px] text-stone-400">Permite escribir cualquier identificador de modelo personalizado</span>
+                    </div>
+                  </label>
+
+                  {isCustomAiModel && (
+                    <div className="pt-2 pl-6">
+                      <input
+                        type="text"
+                        placeholder="Ej: gemini-3.8-flash o gemini-2.5-flash"
+                        value={customAiModelText}
+                        onChange={(e) => {
+                          setCustomAiModelText(e.target.value);
+                          setAdminSettingsForm({ ...adminSettingsForm, aiModel: e.target.value });
+                        }}
+                        className="w-full max-w-md bg-[#161720] border border-blue-600/80 rounded-xl px-3.5 py-2 text-stone-100 font-mono text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Mensaje Personalizado de Rechazo */}
+              <div>
+                <label className="block text-xs font-cinzel font-bold uppercase text-red-300 mb-1">
+                  Mensaje Personalizado para Cuentas Rechazadas
+                </label>
+                <p className="text-[11px] text-stone-400 mb-2">
+                  Este mensaje se mostrará inmediatamente a los usuarios cuando intenten ingresar tras ser rechazados.
+                </p>
+                <textarea
+                  rows={3}
+                  value={
+                    adminSettingsForm.rejectionCustomMessage ||
+                    'Lo lamentamos, por el momento no puedes acceder a WeRoll. Manda mensaje a soporte@weroll.app si quieres una revisión manual de tu caso.'
+                  }
+                  onChange={(e) =>
+                    setAdminSettingsForm({ ...adminSettingsForm, rejectionCustomMessage: e.target.value })
+                  }
+                  placeholder="Lo lamentamos, por el momento no puedes acceder a WeRoll, manda mensaje a ejemplo@com si quieres una revision manual de tu caso"
+                  className="w-full bg-[#121316] border border-stone-700 rounded-xl p-3 text-stone-200 text-xs font-sans outline-none focus:border-red-500 resize-none leading-relaxed"
                 />
               </div>
 
+              {/* Saludo Sabio Arcano */}
               <div>
                 <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
-                  Subtítulo / Versión
+                  Saludo Personalizado del Sabio Arcano
                 </label>
-                <input
-                  type="text"
-                  value={adminSettingsForm.headerSubtitle || ''}
-                  onChange={(e) => setAdminSettingsForm({ ...adminSettingsForm, headerSubtitle: e.target.value })}
-                  className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs outline-none focus:border-blue-500"
+                <textarea
+                  rows={2}
+                  value={adminSettingsForm.oracleWelcomeMessage || ''}
+                  onChange={(e) =>
+                    setAdminSettingsForm({ ...adminSettingsForm, oracleWelcomeMessage: e.target.value })
+                  }
+                  className="w-full bg-[#121316] border border-stone-700 rounded-xl p-3 text-stone-200 text-xs outline-none focus:border-blue-500 resize-none"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
-                  Modelo Gemini (IA)
-                </label>
-                <select
-                  value={adminSettingsForm.aiModel || 'gemini-2.5-flash'}
-                  onChange={(e) => setAdminSettingsForm({ ...adminSettingsForm, aiModel: e.target.value })}
-                  className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs outline-none focus:border-blue-500"
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-cinzel font-bold text-xs shadow-lg transition"
                 >
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Rápido y recomendado)</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro (Razonamiento profundo)</option>
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                </select>
+                  Guardar Configuración en el Servidor
+                </button>
               </div>
+            </form>
+          )}
 
-              <div>
-                <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
-                  Gemini API Key (Opcional - Servidor usa env por defecto)
-                </label>
-                <input
-                  type="password"
-                  placeholder="AIzaSy..."
-                  value={adminSettingsForm.apiKeyOverride || ''}
-                  onChange={(e) => setAdminSettingsForm({ ...adminSettingsForm, apiKeyOverride: e.target.value })}
-                  className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs font-mono outline-none focus:border-blue-500"
-                />
+          {/* =================================================================== */}
+          {/* MODAL: EDIT / CREATE CHANGELOG ENTRY                                */}
+          {/* =================================================================== */}
+          {isChangelogEditModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in">
+              <div className="w-full max-w-lg bg-[#181922] border-2 border-amber-900/80 rounded-3xl p-6 shadow-2xl text-stone-200">
+                <div className="flex items-center justify-between pb-3 border-b border-stone-800 mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-amber-600/30 border border-amber-500 flex items-center justify-center text-amber-300">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-cinzel font-bold text-base text-amber-300">
+                        {editingChangelogIdx === -1 ? 'Publicar Nueva Versión' : 'Editar Actualización'}
+                      </h3>
+                      <p className="text-[11px] text-stone-400">
+                        Actualiza el registro de novedades visible para toda la comunidad
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsChangelogEditModalOpen(false)}
+                    className="p-1 rounded-lg text-stone-400 hover:text-stone-200"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveChangelogSubmit} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                        Versión (ej. 0.2)
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={changelogFormVersion}
+                        onChange={(e) => setChangelogFormVersion(e.target.value)}
+                        className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono text-xs outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                        Fecha (AAAA-MM-DD)
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={changelogFormDate}
+                        onChange={(e) => setChangelogFormDate(e.target.value)}
+                        className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono text-xs outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                      Título de la Actualización
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: Bóveda de Servidor, Seguridad de Roles y Modelos IA"
+                      value={changelogFormTitle}
+                      onChange={(e) => setChangelogFormTitle(e.target.value)}
+                      className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-100 text-xs outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
+                      Cambios / Novedades (Una por línea)
+                    </label>
+                    <textarea
+                      rows={5}
+                      required
+                      placeholder="Novedad 1&#10;Novedad 2&#10;Novedad 3"
+                      value={changelogFormChanges}
+                      onChange={(e) => setChangelogFormChanges(e.target.value)}
+                      className="w-full bg-[#121316] border border-stone-700 rounded-xl p-3 text-stone-100 text-xs outline-none focus:border-amber-500 font-sans leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsChangelogEditModalOpen(false)}
+                      className="px-4 py-2 rounded-xl text-xs text-stone-400 hover:text-stone-200"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-cinzel font-bold text-xs shadow-lg transition"
+                    >
+                      Guardar Novedad
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
-
-            <div>
-              <label className="block text-xs font-cinzel font-bold uppercase text-stone-400 mb-1">
-                Saludo Personalizado del Sabio Arcano
-              </label>
-              <textarea
-                rows={2}
-                value={adminSettingsForm.oracleWelcomeMessage || ''}
-                onChange={(e) => setAdminSettingsForm({ ...adminSettingsForm, oracleWelcomeMessage: e.target.value })}
-                className="w-full bg-[#121316] border border-stone-700 rounded-xl px-3 py-2 text-stone-200 text-xs outline-none focus:border-blue-500 resize-none"
-              />
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                type="submit"
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-cinzel font-bold text-xs shadow-lg transition"
-              >
-                Guardar Configuración en el Servidor
-              </button>
-            </div>
-          </form>
+          )}
         </div>
       )}
 

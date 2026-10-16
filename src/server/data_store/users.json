@@ -34,5 +34,17 @@
     "lastActiveAt": 1792153661320,
     "approvedAt": 1792153669762,
     "approvedBy": "Admin"
+  },
+  {
+    "email": "test_pending@example.com",
+    "displayName": "Jugador Pendiente",
+    "password": "123",
+    "role": "both",
+    "status": "rejected",
+    "id": "usr-1792156319283-t4a1w",
+    "registeredAt": 1792156319283,
+    "lastActiveAt": 1792156319283,
+    "approvedAt": 1792156326280,
+    "approvedBy": "Admin"
   }
 ]

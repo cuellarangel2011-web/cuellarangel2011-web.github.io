@@ -1,6 +1,6 @@
 import express from 'express';
 import { GoogleGenAI } from '@google/genai';
-import type { DiceRollResult, PartyMemberLive, PresenceStatus } from '../types/dnd.ts';
+import type { DiceRollResult, PartyMemberLive, PresenceStatus, LiveCombatantMini } from '../types/dnd.ts';
 import { dataStore } from './dataStore.ts';
 
 export const apiRouter = express.Router();
@@ -26,6 +26,8 @@ interface RoomState {
   }[];
   currentQuest?: string;
   quickNotification?: string;
+  showCombatantsOnTable?: boolean;
+  liveCombatants?: LiveCombatantMini[];
 }
 
 const rooms: Record<string, RoomState> = {};
@@ -47,6 +49,8 @@ function getOrCreateRoom(code: string): RoomState {
       dmAnnouncements: [],
       currentQuest: 'Investigar los misterios del reino y proteger a los inocentes.',
       quickNotification: '',
+      showCombatantsOnTable: false,
+      liveCombatants: [],
     };
   }
   return rooms[normCode];
@@ -152,22 +156,18 @@ apiRouter.post('/auth/login', (req, res) => {
 
   if (user.status === 'pending') {
     return res.status(403).json({
-      error: 'Tu cuenta aún está en estado PENDIENTE de revisión por el Administrador. Espera a que sea aprobada.',
+      error: 'Tu cuenta está en estado PENDIENTE de aprobación por el Administrador. No puedes ingresar hasta que sea aprobada.',
       status: 'pending',
-      user: {
-        id: user.id,
-        email: user.email,
-        displayName: user.displayName,
-        role: user.role,
-        status: user.status,
-      },
     });
   }
 
   if (user.status === 'rejected') {
+    const host = dataStore.getHostSettings();
+    const customMsg = host.rejectionCustomMessage || 'Lo lamentamos, por el momento no puedes acceder a WeRoll. Manda mensaje a soporte@weroll.app si quieres una revisión manual de tu caso.';
     return res.status(403).json({
       error: 'Tu solicitud de acceso ha sido rechazada por el Administrador.',
       status: 'rejected',
+      customMessage: customMsg,
     });
   }
 
@@ -248,7 +248,7 @@ apiRouter.post('/admin/users/:id/reject', (req, res) => {
 // Change user role
 apiRouter.post('/admin/users/:id/role', (req, res) => {
   const { role } = req.body;
-  if (!['player', 'dm', 'moderator'].includes(role)) {
+  if (!['player', 'dm', 'both', 'moderator'].includes(role)) {
     return res.status(400).json({ error: 'Rol inválido.' });
   }
   const updated = dataStore.updateUserRole(req.params.id, role);
@@ -367,13 +367,22 @@ apiRouter.get('/session/room/:roomCode', (req, res) => {
     dmAnnouncements: room.dmAnnouncements.slice(-10),
     currentQuest: room.currentQuest,
     quickNotification: room.quickNotification,
+    showCombatantsOnTable: Boolean(room.showCombatantsOnTable),
+    liveCombatants: room.liveCombatants || [],
   });
 });
 
-// 2b. Post DM Heartbeat, Live Message & Presence
+// 2b. Post DM Heartbeat, Live Message, Presence & Active Encounter Combatants
 apiRouter.post('/session/room/:roomCode/dm-heartbeat', (req, res) => {
   const room = getOrCreateRoom(req.params.roomCode);
-  const { dmLiveMessage, dmConnected = true, presenceStatus = 'active', idleSeconds = 0 } = req.body;
+  const {
+    dmLiveMessage,
+    dmConnected = true,
+    presenceStatus = 'active',
+    idleSeconds = 0,
+    showCombatantsOnTable,
+    liveCombatants,
+  } = req.body;
 
   room.dmConnected = dmConnected;
   room.dmLastPing = Date.now();
@@ -382,11 +391,23 @@ apiRouter.post('/session/room/:roomCode/dm-heartbeat', (req, res) => {
   if (dmLiveMessage !== undefined) {
     room.dmLiveMessage = dmLiveMessage;
   }
+  if (showCombatantsOnTable !== undefined) {
+    room.showCombatantsOnTable = Boolean(showCombatantsOnTable);
+  }
+  if (Array.isArray(liveCombatants)) {
+    room.liveCombatants = liveCombatants;
+  }
   room.lastUpdated = Date.now();
-  res.json({ success: true, dmLiveMessage: room.dmLiveMessage, dmPresenceStatus: room.dmPresenceStatus });
+  res.json({
+    success: true,
+    dmLiveMessage: room.dmLiveMessage,
+    dmPresenceStatus: room.dmPresenceStatus,
+    showCombatantsOnTable: room.showCombatantsOnTable,
+    liveCombatants: room.liveCombatants,
+  });
 });
 
-// 3. Post Player Heartbeat & 4-Tier Presence Update
+// 3. Post Player Heartbeat & 4-Tier Presence Update + Live Stats & Coins
 apiRouter.post('/session/room/:roomCode/heartbeat', (req, res) => {
   const room = getOrCreateRoom(req.params.roomCode);
   const {
@@ -402,6 +423,8 @@ apiRouter.post('/session/room/:roomCode/heartbeat', (req, res) => {
     presenceStatus = 'active',
     idleSeconds = 0,
     lastRoll,
+    abilities,
+    currency,
   } = req.body;
 
   if (characterId) {
@@ -420,6 +443,8 @@ apiRouter.post('/session/room/:roomCode/heartbeat', (req, res) => {
       presenceStatus,
       idleSeconds,
       lastRoll: lastRoll || existing?.lastRoll,
+      abilities: abilities || existing?.abilities,
+      currency: currency || existing?.currency,
     };
     room.lastUpdated = Date.now();
   }
@@ -592,6 +617,120 @@ apiRouter.get('/vault/backup-all', (req, res) => {
   res.json(backup);
 });
 
+// Detailed list of all backups, player sheets and world sheets for the Admin Vault
+apiRouter.get('/admin/vault/details', (req, res) => {
+  const sheets = dataStore.getPlayerSheets();
+  const worlds = dataStore.getWorldSheets();
+  const backupsMap = dataStore.getBackups();
+  res.json({
+    sheets,
+    worlds,
+    backups: Object.values(backupsMap),
+  });
+});
+
+// Download individual player sheet JSON
+apiRouter.get('/admin/vault/sheet/:id/download', (req, res) => {
+  const sheets = dataStore.getPlayerSheets();
+  const sheet = sheets.find((s) => s.id === req.params.id);
+  if (!sheet) {
+    return res.status(404).json({ error: 'Ficha de personaje no encontrada.' });
+  }
+  const safeName = (sheet.name || 'personaje').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="sheet-${safeName}-${sheet.id}.json"`);
+  res.json(sheet);
+});
+
+// Download individual world sheet JSON
+apiRouter.get('/admin/vault/world/:id/download', (req, res) => {
+  const worlds = dataStore.getWorldSheets();
+  const world = worlds.find((w) => w.id === req.params.id);
+  if (!world) {
+    return res.status(404).json({ error: 'World Sheet no encontrado.' });
+  }
+  const safeName = (world.name || 'campaña').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="world-${safeName}-${world.id}.json"`);
+  res.json(world);
+});
+
+// Download individual rotating backup JSON
+apiRouter.get('/admin/vault/backup/:charId/download', (req, res) => {
+  const backups = dataStore.getBackups();
+  const entry = backups[req.params.charId];
+  if (!entry) {
+    return res.status(404).json({ error: 'Respaldo no encontrado.' });
+  }
+  const safeName = (entry.characterName || 'backup').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="backup-${safeName}-${entry.characterId}.json"`);
+  res.json(entry);
+});
+
+// Restore / Upload Backup JSON to Server Vault
+apiRouter.post('/admin/vault/restore', (req, res) => {
+  try {
+    const result = dataStore.restoreBackup(req.body);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Error al restaurar respaldo.' });
+  }
+});
+
+// ==========================================
+// CHANGELOG / UPDATES BLOG ADMIN MANAGEMENT
+// ==========================================
+apiRouter.get('/admin/changelog', (req, res) => {
+  res.json({ changelog: dataStore.getChangelog() });
+});
+
+apiRouter.post('/admin/changelog', (req, res) => {
+  const { version, title, date, changes } = req.body;
+  if (!version || !title) {
+    return res.status(400).json({ error: 'Versión y título requeridos.' });
+  }
+  const entry = {
+    version: version.trim(),
+    title: title.trim(),
+    date: date || new Date().toISOString().split('T')[0],
+    changes: Array.isArray(changes) ? changes : [changes || 'Actualización de sistema'],
+  };
+  const list = dataStore.addChangelogEntry(entry);
+  res.json({ success: true, changelog: list });
+});
+
+apiRouter.put('/admin/changelog/:index', (req, res) => {
+  const idx = parseInt(req.params.index, 10);
+  const { version, title, date, changes } = req.body;
+  if (isNaN(idx)) {
+    return res.status(400).json({ error: 'Índice inválido.' });
+  }
+  const entry = {
+    version: version.trim(),
+    title: title.trim(),
+    date: date || new Date().toISOString().split('T')[0],
+    changes: Array.isArray(changes) ? changes : [changes || 'Actualización de sistema'],
+  };
+  const list = dataStore.updateChangelogEntry(idx, entry);
+  if (!list) {
+    return res.status(404).json({ error: 'Entrada de changelog no encontrada.' });
+  }
+  res.json({ success: true, changelog: list });
+});
+
+apiRouter.delete('/admin/changelog/:index', (req, res) => {
+  const idx = parseInt(req.params.index, 10);
+  if (isNaN(idx)) {
+    return res.status(400).json({ error: 'Índice inválido.' });
+  }
+  const list = dataStore.deleteChangelogEntry(idx);
+  if (!list) {
+    return res.status(404).json({ error: 'Entrada de changelog no encontrada.' });
+  }
+  res.json({ success: true, changelog: list });
+});
+
 // Persistent Host Settings
 apiRouter.get('/settings', (req, res) => {
   res.json(dataStore.getHostSettings());
@@ -722,8 +861,10 @@ ${(dmContext.combatSummaries || []).map((cs: any) => `• "${cs.name}" (${cs.dat
 
     const fullPrompt = `${contextSnippet ? contextSnippet + '\n\n' : ''}Consulta: ${prompt}`;
 
+    const host = dataStore.getHostSettings();
+    const chosenModel = model || host.aiModel || 'gemini-flash-lite-latest';
     const response = await ai.models.generateContent({
-      model: model || 'gemini-3.8-flash',
+      model: chosenModel,
       contents: fullPrompt,
       config: {
         systemInstruction,

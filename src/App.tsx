@@ -35,6 +35,7 @@ import {
   HostSettings,
   InventoryItem,
   WorldSheetSummary,
+  LiveCombatantMini,
 } from './types/dnd';
 import {
   loadCharacters,
@@ -137,6 +138,19 @@ export default function App() {
   const [serverDmLiveMessage, setServerDmLiveMessage] = useState<string>('');
   const [serverDmLastRoll, setServerDmLastRoll] = useState<DiceRollResult | undefined>(undefined);
   const [roomClosedAlert, setRoomClosedAlert] = useState<string>('');
+  const [showCombatantsOnTable, setShowCombatantsOnTable] = useState<boolean>(false);
+  const [liveCombatants, setLiveCombatants] = useState<LiveCombatantMini[]>([]);
+
+  // Refs to always access freshest state inside intervals and async callbacks without stale closures
+  const activeCharacterRef = useRef<Character5e | undefined>(activeCharacter);
+  useEffect(() => {
+    activeCharacterRef.current = activeCharacter;
+  }, [activeCharacter]);
+
+  const dmWorkspaceRef = useRef<DMWorkspace>(dmWorkspace);
+  useEffect(() => {
+    dmWorkspaceRef.current = dmWorkspace;
+  }, [dmWorkspace]);
 
   // Broadcast channel for instantaneous cross-tab communication
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
@@ -155,6 +169,9 @@ export default function App() {
           setActiveAnnouncement(payload);
         } else if (type === 'DM_LIVE_MESSAGE') {
           setServerDmLiveMessage(payload);
+        } else if (type === 'COMBATANTS_UPDATE') {
+          setShowCombatantsOnTable(payload.showCombatantsOnTable);
+          setLiveCombatants(payload.liveCombatants || []);
         }
       };
 
@@ -163,6 +180,78 @@ export default function App() {
       };
     }
   }, []);
+
+  // Send player heartbeat to room server
+  const sendPlayerHeartbeat = async (char?: Character5e) => {
+    const target = char || activeCharacterRef.current;
+    if (!target) return;
+    try {
+      const prof = calculateProficiencyBonus(target.level);
+      const pp = calculatePassivePerception(
+        target.abilities.wis.score,
+        target.skills.perception,
+        prof
+      );
+
+      await fetch(`/api/session/room/${roomCode}/heartbeat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          characterId: target.id,
+          characterName: target.name,
+          playerName: target.playerName,
+          currentHp: target.currentHp,
+          maxHp: target.maxHp,
+          ac: target.armorClass,
+          passivePerception: pp,
+          level: target.level,
+          characterClass: `${target.race} ${target.characterClass}`,
+          lastRoll: recentRoll,
+          abilities: {
+            str: target.abilities.str.score,
+            dex: target.abilities.dex.score,
+            con: target.abilities.con.score,
+            int: target.abilities.int.score,
+            wis: target.abilities.wis.score,
+            cha: target.abilities.cha.score,
+          },
+          currency: target.currency,
+        }),
+      });
+    } catch (e) {}
+  };
+
+  // Send DM heartbeat & active combatants to room server
+  const sendDmHeartbeat = async (ws?: DMWorkspace) => {
+    const targetWs = ws || dmWorkspaceRef.current;
+    if (!targetWs) return;
+
+    try {
+      const shouldBroadcast = Boolean(targetWs.activeEncounter?.broadcastEnemiesToTable);
+      const combatantsMini: LiveCombatantMini[] = (targetWs.activeEncounter?.combatants || []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        hp: c.hp,
+        maxHp: c.maxHp,
+        ac: c.ac,
+        passivePerception: c.passivePerception ?? 10,
+        faction: c.faction || (c.isPlayer ? 'ally' : 'enemy'),
+        isPlayer: Boolean(c.isPlayer),
+        conditions: c.conditions || [],
+      }));
+
+      await fetch(`/api/session/room/${roomCode}/dm-heartbeat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dmLiveMessage: targetWs.dmLiveMessage || '',
+          dmConnected: true,
+          showCombatantsOnTable: shouldBroadcast,
+          liveCombatants: combatantsMini,
+        }),
+      });
+    } catch (e) {}
+  };
 
   // Fetch world sheets for the authenticated DM
   const fetchWorldSheets = async () => {
@@ -197,42 +286,13 @@ export default function App() {
     const syncSession = async () => {
       try {
         // Send player heartbeat if player session
-        if (appView === 'player-session' && activeCharacter) {
-          const prof = calculateProficiencyBonus(activeCharacter.level);
-          const pp = calculatePassivePerception(
-            activeCharacter.abilities.wis.score,
-            activeCharacter.skills.perception,
-            prof
-          );
-
-          await fetch(`/api/session/room/${roomCode}/heartbeat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              characterId: activeCharacter.id,
-              characterName: activeCharacter.name,
-              playerName: activeCharacter.playerName,
-              currentHp: activeCharacter.currentHp,
-              maxHp: activeCharacter.maxHp,
-              ac: activeCharacter.armorClass,
-              passivePerception: pp,
-              level: activeCharacter.level,
-              characterClass: `${activeCharacter.race} ${activeCharacter.characterClass}`,
-              lastRoll: recentRoll,
-            }),
-          });
+        if (appView === 'player-session') {
+          await sendPlayerHeartbeat(activeCharacterRef.current);
         }
 
         // Send DM heartbeat if DM session
         if (appView === 'dm-session') {
-          await fetch(`/api/session/room/${roomCode}/dm-heartbeat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              dmLiveMessage: dmWorkspace.dmLiveMessage || '',
-              dmConnected: true,
-            }),
-          });
+          await sendDmHeartbeat(dmWorkspaceRef.current);
         }
 
         // Fetch full room state
@@ -266,6 +326,12 @@ export default function App() {
           if (data.dmLastRoll) {
             setServerDmLastRoll(data.dmLastRoll);
           }
+          if (data.showCombatantsOnTable !== undefined) {
+            setShowCombatantsOnTable(Boolean(data.showCombatantsOnTable));
+          }
+          if (Array.isArray(data.liveCombatants)) {
+            setLiveCombatants(data.liveCombatants);
+          }
         }
       } catch (err) {
         // Offline handling
@@ -273,13 +339,13 @@ export default function App() {
     };
 
     syncSession();
-    const interval = setInterval(syncSession, 3000);
+    const interval = setInterval(syncSession, 2500);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [appView, roomCode, activeCharacter?.id, dmWorkspace?.dmLiveMessage]);
+  }, [appView, roomCode]);
 
   // Auth / Role Selection Callback
   const handleSelectRole = (role: UserRole, user?: AuthSessionUser) => {
@@ -545,9 +611,46 @@ export default function App() {
 
   // Character updates
   const handleUpdateCharacter = (updated: Character5e) => {
+    activeCharacterRef.current = updated;
     const newChars = characters.map((c) => (c.id === updated.id ? updated : c));
     setCharacters(newChars);
     saveCharacters(newChars);
+
+    if (appView === 'player-session') {
+      const prof = calculateProficiencyBonus(updated.level);
+      const pp = calculatePassivePerception(
+        updated.abilities.wis.score,
+        updated.skills.perception,
+        prof
+      );
+
+      // Optimistic update of local player card so HP, stats and coins refresh INSTANTLY
+      setPartyMembers((prev) =>
+        prev.map((m) =>
+          m.characterId === updated.id
+            ? {
+                ...m,
+                currentHp: updated.currentHp,
+                maxHp: updated.maxHp,
+                ac: updated.armorClass,
+                passivePerception: pp,
+                abilities: {
+                  str: updated.abilities.str.score,
+                  dex: updated.abilities.dex.score,
+                  con: updated.abilities.con.score,
+                  int: updated.abilities.int.score,
+                  wis: updated.abilities.wis.score,
+                  cha: updated.abilities.cha.score,
+                },
+                currency: updated.currency,
+              }
+            : m
+        )
+      );
+
+      // Immediate heartbeat push to server
+      sendPlayerHeartbeat(updated);
+    }
   };
 
   // Handle dice rolls
@@ -798,6 +901,8 @@ export default function App() {
             isDmMode={appView === 'dm-session'}
             dmConnected={serverDmConnected}
             dmLiveMessage={serverDmLiveMessage}
+            showCombatantsOnTable={showCombatantsOnTable}
+            liveCombatants={liveCombatants}
             onUpdateDmLiveMessage={(msg) => {
               setServerDmLiveMessage(msg);
               if (broadcastChannelRef.current) {
@@ -838,8 +943,37 @@ export default function App() {
           <DMScreenView
             workspace={dmWorkspace}
             onUpdateWorkspace={(updated) => {
+              dmWorkspaceRef.current = updated;
               setDmWorkspace(updated);
               saveDMWorkspace(updated);
+
+              const shouldBroadcast = Boolean(updated.activeEncounter?.broadcastEnemiesToTable);
+              setShowCombatantsOnTable(shouldBroadcast);
+
+              const combatantsMini: LiveCombatantMini[] = (updated.activeEncounter?.combatants || []).map((c) => ({
+                id: c.id,
+                name: c.name,
+                hp: c.hp,
+                maxHp: c.maxHp,
+                ac: c.ac,
+                passivePerception: c.passivePerception ?? 10,
+                faction: c.faction || (c.isPlayer ? 'ally' : 'enemy'),
+                isPlayer: Boolean(c.isPlayer),
+                conditions: c.conditions || [],
+              }));
+              setLiveCombatants(combatantsMini);
+
+              if (broadcastChannelRef.current) {
+                broadcastChannelRef.current.postMessage({
+                  type: 'COMBATANTS_UPDATE',
+                  payload: {
+                    showCombatantsOnTable: shouldBroadcast,
+                    liveCombatants: combatantsMini,
+                  },
+                });
+              }
+
+              sendDmHeartbeat(updated);
             }}
             worldName={activeWorld?.name}
             roomCode={roomCode}

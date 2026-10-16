@@ -243,10 +243,12 @@ export interface Combatant {
   hp: number;
   maxHp: number;
   ac: number;
+  passivePerception?: number;
   isPlayer: boolean;
   characterId?: string;
   conditions: string[];
   notes?: string;
+  faction?: 'enemy' | 'ally';
 }
 
 export interface CombatLogEvent {
@@ -268,7 +270,6 @@ export interface CombatSummary {
   folder?: string;
 }
 
-
 export interface EncounterState {
   id: string;
   name: string;
@@ -278,6 +279,7 @@ export interface EncounterState {
   isActive: boolean;
   combatNotes: string;
   combatLog: CombatLogEvent[];
+  broadcastEnemiesToTable?: boolean;
 }
 
 export interface DMCustomItemOrSpell {
@@ -347,6 +349,33 @@ export interface PartyMemberLive {
   presenceStatus?: PresenceStatus;
   idleSeconds?: number;
   lastRoll?: DiceRollResult;
+  abilities?: {
+    str: number;
+    dex: number;
+    con: number;
+    int: number;
+    wis: number;
+    cha: number;
+  };
+  currency?: {
+    cp: number;
+    sp: number;
+    ep: number;
+    gp: number;
+    pp: number;
+  };
+}
+
+export interface LiveCombatantMini {
+  id: string;
+  name: string;
+  hp: number;
+  maxHp: number;
+  ac: number;
+  passivePerception: number;
+  faction: 'enemy' | 'ally';
+  isPlayer: boolean;
+  conditions?: string[];
 }
 
 export interface SharedSessionData {
@@ -366,6 +395,8 @@ export interface SharedSessionData {
   }[];
   currentQuest?: string;
   quickNotification?: string;
+  showCombatantsOnTable?: boolean;
+  liveCombatants?: LiveCombatantMini[];
 }
 
 export type UserRole = 'player' | 'dm' | 'both' | 'moderator';
@@ -403,7 +434,7 @@ export interface ChangelogEntry {
 
 export interface HostSettings {
   apiKeyOverride?: string;
-  aiModel?: string; // 'gemini-2.5-flash' | 'gemini-1.5-pro' | 'gemini-1.5-flash'
+  aiModel?: string; // 'gemini-flash-lite-latest' | 'gemini-flash-latest' | custom string
   modelOverride?: string;
   dmPassword?: string;
   moderatorPassword?: string;
@@ -411,6 +442,7 @@ export interface HostSettings {
   headerSubtitle?: string;
   headerLogoIcon?: string; // 'shield' | 'dragon' | 'book' | 'skull' | 'sword'
   logoIcon?: string;
+  rejectionCustomMessage?: string;
   developerNotice?: {
     enabled: boolean;
     title: string;
@@ -424,6 +456,12 @@ export interface HostSettings {
     version?: string;
   };
   oracleWelcomeMessage?: string;
+  adminGreeting?: {
+    enabled: boolean;
+    title: string;
+    message: string;
+    updatedAt?: number;
+  };
   changelog?: ChangelogEntry[];
   roleSwitchingAllowed?: 'strict' | 'open'; // 'strict' locks player to player and DM to DM; 'open' allows switcher
 }

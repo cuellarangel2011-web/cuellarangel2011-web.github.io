@@ -46,12 +46,14 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [pendingNotice, setPendingNotice] = useState<string>('');
+  const [rejectedNotice, setRejectedNotice] = useState<{ message: string; customMessage?: string } | null>(null);
 
   if (!isOpen) return null;
 
   const handleChooseRoleCard = (role: UserRole) => {
     setErrorMessage('');
     setPendingNotice('');
+    setRejectedNotice(null);
     setEnteredPassword('');
 
     if (role === 'moderator') {
@@ -79,6 +81,8 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
   const handleDirectPasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+    setPendingNotice('');
+    setRejectedNotice(null);
 
     if (selectedRole === 'dm') {
       if (!dmPasswordExpected || enteredPassword.trim() === dmPasswordExpected.trim()) {
@@ -112,6 +116,7 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
     e.preventDefault();
     setErrorMessage('');
     setPendingNotice('');
+    setRejectedNotice(null);
     if (!loginEmail.trim() || !loginPassword.trim()) {
       setErrorMessage('Por favor ingresa correo y contraseña.');
       return;
@@ -126,12 +131,17 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
       });
       const data = await res.json();
       if (!res.ok) {
-        if (data.status === 'pending' && data.user) {
-          // Transition into lobby in pending mode as requested
-          onSelectRole(data.user.role, data.user);
-          return;
-        } else if (data.status === 'pending') {
-          setPendingNotice(data.error);
+        if (data.status === 'pending') {
+          setPendingNotice(
+            data.error || 'Tu cuenta está en estado PENDIENTE de aprobación por el Administrador. No puedes ingresar hasta que sea aprobada.'
+          );
+        } else if (data.status === 'rejected') {
+          setRejectedNotice({
+            message: data.error || 'Tu solicitud de acceso ha sido rechazada por el Administrador.',
+            customMessage:
+              data.customMessage ||
+              'Lo lamentamos, por el momento no puedes acceder a WeRoll. Manda mensaje a soporte@weroll.app si quieres una revisión manual de tu caso.',
+          });
         } else {
           setErrorMessage(data.error || 'Error al iniciar sesión.');
         }
@@ -140,14 +150,7 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
 
       onSelectRole(data.user.role, data.user);
     } catch (err: any) {
-      // Offline fallback: allow direct entrance
-      onSelectRole(selectedRole || 'player', {
-        id: `offline-${Date.now()}`,
-        email: loginEmail,
-        displayName: loginEmail.split('@')[0],
-        role: selectedRole || 'player',
-        status: 'approved',
-      });
+      setErrorMessage('No se pudo conectar con el servidor para verificar las credenciales. Intenta de nuevo.');
     } finally {
       setIsLoading(false);
     }
@@ -224,6 +227,23 @@ export const RoleSelectionModal: React.FC<RoleSelectionModalProps> = ({
             <div className="leading-relaxed">
               <strong className="block font-cinzel font-bold text-amber-300 mb-0.5">Cuenta en Revisión</strong>
               {pendingNotice}
+            </div>
+          </div>
+        )}
+
+        {rejectedNotice && (
+          <div className="mb-4 p-4 rounded-xl bg-red-950/90 border border-red-600/80 text-xs text-red-200 flex items-start gap-3 shadow-lg">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="leading-relaxed w-full">
+              <strong className="block font-cinzel font-bold text-red-300 mb-1 text-sm">
+                Solicitud de Acceso Rechazada
+              </strong>
+              <p className="text-red-200/90">{rejectedNotice.message}</p>
+              {rejectedNotice.customMessage && (
+                <div className="mt-2.5 p-3 rounded-xl bg-[#121318] border border-red-900/60 text-stone-300 font-sans leading-relaxed">
+                  {rejectedNotice.customMessage}
+                </div>
+              )}
             </div>
           </div>
         )}

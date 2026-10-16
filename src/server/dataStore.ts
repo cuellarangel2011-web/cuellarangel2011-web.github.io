@@ -155,7 +155,7 @@ export const dataStore = {
     return users[idx];
   },
 
-  updateUserRole(id: string, role: 'player' | 'dm' | 'moderator'): UserAccount | null {
+  updateUserRole(id: string, role: 'player' | 'dm' | 'both' | 'moderator'): UserAccount | null {
     const users = this.getUsers();
     const idx = users.findIndex((u) => u.id === id);
     if (idx === -1) return null;
@@ -328,6 +328,8 @@ export const dataStore = {
       dmPassword: '',
       oracleWelcomeMessage:
         'Saludos, viajero. Soy el Sabio Arcano, tu árbitro y custodio de las reglas de 5E. ¿Qué duda deseas resolver hoy?',
+      rejectionCustomMessage:
+        'Lo lamentamos, por el momento no puedes acceder a WeRoll. Manda mensaje a soporte@weroll.app si quieres una revisión manual de tu caso.',
       developerNotice: {
         enabled: true,
         title: 'WeRoll • Actualizaciones v0.1',
@@ -361,7 +363,42 @@ export const dataStore = {
     writeJSON('settings.json', settings);
   },
 
-  // --- FULL DATABASE BACKUP EXPORT ---
+  // --- CHANGELOG / UPDATES BLOG CRUD ---
+  getChangelog(): ChangelogEntry[] {
+    const settings = this.getHostSettings();
+    return settings.changelog || [];
+  },
+
+  addChangelogEntry(entry: ChangelogEntry): ChangelogEntry[] {
+    const settings = this.getHostSettings();
+    const list = settings.changelog || [];
+    list.unshift(entry);
+    settings.changelog = list;
+    this.saveHostSettings(settings);
+    return list;
+  },
+
+  updateChangelogEntry(index: number, updated: ChangelogEntry): ChangelogEntry[] | null {
+    const settings = this.getHostSettings();
+    const list = settings.changelog || [];
+    if (index < 0 || index >= list.length) return null;
+    list[index] = updated;
+    settings.changelog = list;
+    this.saveHostSettings(settings);
+    return list;
+  },
+
+  deleteChangelogEntry(index: number): ChangelogEntry[] | null {
+    const settings = this.getHostSettings();
+    const list = settings.changelog || [];
+    if (index < 0 || index >= list.length) return null;
+    list.splice(index, 1);
+    settings.changelog = list;
+    this.saveHostSettings(settings);
+    return list;
+  },
+
+  // --- FULL DATABASE BACKUP EXPORT & RESTORE ---
   getFullBackup(): object {
     return {
       exportedAt: new Date().toISOString(),
@@ -373,5 +410,120 @@ export const dataStore = {
       backups: this.getBackups(),
       settings: this.getHostSettings(),
     };
+  },
+
+  restoreBackup(payload: any): { success: boolean; type: string; count: number; message: string } {
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('El archivo proporcionado no contiene un JSON válido.');
+    }
+
+    // Case 1: Full Database Backup Export
+    if (payload.sheets || payload.worlds || payload.backups || payload.settings) {
+      let restoredSheetsCount = 0;
+      let restoredWorldsCount = 0;
+
+      if (Array.isArray(payload.sheets)) {
+        const currentSheets = this.getPlayerSheets();
+        for (const s of payload.sheets) {
+          if (s && s.id && s.character) {
+            const idx = currentSheets.findIndex((item) => item.id === s.id);
+            if (idx >= 0) currentSheets[idx] = s;
+            else currentSheets.push(s);
+            restoredSheetsCount++;
+          }
+        }
+        writeJSON('sheets.json', currentSheets);
+      }
+
+      if (Array.isArray(payload.worlds)) {
+        const currentWorlds = this.getWorldSheets();
+        for (const w of payload.worlds) {
+          if (w && w.id && w.workspace) {
+            const idx = currentWorlds.findIndex((item) => item.id === w.id);
+            if (idx >= 0) currentWorlds[idx] = w;
+            else currentWorlds.push(w);
+            restoredWorldsCount++;
+          }
+        }
+        writeJSON('worlds.json', currentWorlds);
+      }
+
+      if (payload.backups && typeof payload.backups === 'object') {
+        const currentBackups = this.getBackups();
+        Object.assign(currentBackups, payload.backups);
+        writeJSON('backups.json', currentBackups);
+      }
+
+      if (payload.settings && typeof payload.settings === 'object') {
+        const currentSettings = this.getHostSettings();
+        const mergedSettings = { ...currentSettings, ...payload.settings };
+        this.saveHostSettings(mergedSettings);
+      }
+
+      return {
+        success: true,
+        type: 'full_database',
+        count: restoredSheetsCount + restoredWorldsCount,
+        message: `Respaldo total restaurado: ${restoredSheetsCount} fichas de jugador y ${restoredWorldsCount} World Sheets importados con éxito.`,
+      };
+    }
+
+    // Case 2: Single Player Sheet
+    if (payload.character && payload.character.id && payload.character.name) {
+      this.savePlayerSheet({
+        id: payload.id || payload.character.id,
+        ownerEmail: payload.ownerEmail || 'jugador@weroll.app',
+        name: payload.name || payload.character.name,
+        character: payload.character,
+        updatedAt: Date.now(),
+      });
+      return {
+        success: true,
+        type: 'player_sheet',
+        count: 1,
+        message: `Ficha de personaje "${payload.character.name}" restaurada con éxito en la bóveda.`,
+      };
+    }
+
+    // Case 3: Raw Character5e object
+    if (payload.name && payload.characterClass && (payload.currentHp !== undefined || payload.abilities)) {
+      const charId = payload.id || `char-${Date.now()}`;
+      this.savePlayerSheet({
+        id: charId,
+        ownerEmail: payload.ownerEmail || 'jugador@weroll.app',
+        name: payload.name,
+        character: { ...payload, id: charId },
+        updatedAt: Date.now(),
+      });
+      return {
+        success: true,
+        type: 'player_sheet',
+        count: 1,
+        message: `Ficha de personaje "${payload.name}" importada exitosamente a la bóveda.`,
+      };
+    }
+
+    // Case 4: Single World Sheet
+    if (payload.workspace && (payload.name || payload.roomCode)) {
+      const worldId = payload.id || `world-${Date.now()}`;
+      this.saveWorldSheet({
+        id: worldId,
+        ownerEmail: payload.ownerEmail || 'dm@weroll.app',
+        name: payload.name || 'Campaña Restaurada',
+        description: payload.description,
+        roomCode: (payload.roomCode || 'MESA-RESTAURADA').toUpperCase(),
+        roomPassword: payload.roomPassword,
+        workspace: payload.workspace,
+        updatedAt: Date.now(),
+      });
+      return {
+        success: true,
+        type: 'world_sheet',
+        count: 1,
+        message: `World Sheet "${payload.name || 'Campaña Restaurada'}" restaurado con éxito en la bóveda.`,
+      };
+    }
+
+    throw new Error('El formato JSON no corresponde a un respaldo válido de WeRoll (Respaldo Total, Ficha de Jugador o World Sheet).');
   },
 };

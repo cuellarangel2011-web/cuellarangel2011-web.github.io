@@ -15,8 +15,10 @@ import {
   AlertTriangle,
   Dices,
   Sparkles,
+  Coins,
+  Skull,
 } from 'lucide-react';
-import { DiceRollResult, PartyMemberLive, PresenceStatus } from '../../types/dnd';
+import { DiceRollResult, PartyMemberLive, PresenceStatus, LiveCombatantMini } from '../../types/dnd';
 
 interface PartySessionBarProps {
   roomCode: string;
@@ -36,6 +38,8 @@ interface PartySessionBarProps {
   dmPresenceStatus?: PresenceStatus;
   dmIdleSeconds?: number;
   onUpdateDmLiveMessage?: (msg: string) => void;
+  showCombatantsOnTable?: boolean;
+  liveCombatants?: LiveCombatantMini[];
 }
 
 export const PartySessionBar: React.FC<PartySessionBarProps> = ({
@@ -55,6 +59,8 @@ export const PartySessionBar: React.FC<PartySessionBarProps> = ({
   dmPresenceStatus = 'active',
   dmIdleSeconds = 0,
   onUpdateDmLiveMessage,
+  showCombatantsOnTable = false,
+  liveCombatants = [],
 }) => {
   const [showRoomModal, setShowRoomModal] = useState<boolean>(false);
   const [inputCode, setInputCode] = useState<string>(roomCode);
@@ -362,60 +368,225 @@ export const PartySessionBar: React.FC<PartySessionBarProps> = ({
             </div>
           )}
 
-          {partyMembers.map((member) => (
-            <div
-              key={member.characterId}
-              className="bg-[#181920] border border-stone-800 rounded-xl p-3 flex flex-col justify-between shadow"
-            >
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-cinzel font-bold text-stone-200 text-xs truncate max-w-[130px]" title={member.characterName}>
-                    {member.characterName}
-                  </span>
-                  {renderPresenceBadge(member.presenceStatus, member.idleSeconds)}
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-stone-400 mb-2">
-                  <span className="truncate max-w-[110px]" title={member.playerName}>Jugador: {member.playerName}</span>
-                  <span className="text-amber-400/90 font-mono text-[10px]">
-                    Niv {member.level} {member.characterClass}
-                  </span>
+          {partyMembers.map((member) => {
+            const formatMod = (score?: number) => {
+              if (score === undefined || score === null) return '-';
+              const mod = Math.floor((score - 10) / 2);
+              return mod >= 0 ? `+${mod}` : `${mod}`;
+            };
+
+            return (
+              <div
+                key={member.characterId}
+                className="bg-[#181920] border border-stone-800 rounded-xl p-3 flex flex-col justify-between shadow hover:border-amber-900/40 transition"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-cinzel font-bold text-stone-200 text-xs truncate max-w-[130px]" title={member.characterName}>
+                      {member.characterName}
+                    </span>
+                    {renderPresenceBadge(member.presenceStatus, member.idleSeconds)}
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-stone-400 mb-2">
+                    <span className="truncate max-w-[110px]" title={member.playerName}>Jugador: {member.playerName}</span>
+                    <span className="text-amber-400/90 font-mono text-[10px]">
+                      Niv {member.level} {member.characterClass}
+                    </span>
+                  </div>
+
+                  {/* HP Bar */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px] font-mono">
+                      <span className="flex items-center gap-1 text-red-400 font-bold">
+                        <Heart className="w-3 h-3" /> PG:
+                      </span>
+                      <span className="text-stone-200 font-bold">
+                        {member.currentHp} / {member.maxHp}
+                      </span>
+                    </div>
+                    <div className="h-2 bg-stone-900 rounded-full overflow-hidden border border-stone-800">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          member.currentHp / member.maxHp > 0.5
+                            ? 'bg-emerald-500'
+                            : member.currentHp / member.maxHp > 0.2
+                            ? 'bg-amber-500'
+                            : 'bg-red-500'
+                        }`}
+                        style={{ width: `${Math.min(100, Math.max(0, (member.currentHp / member.maxHp) * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Stats de Habilidades (FUE, DES, CON, INT, SAB, CAR) */}
+                  {member.abilities && (
+                    <div className="mt-2 pt-1.5 border-t border-stone-800/60">
+                      <div className="text-[9px] uppercase tracking-wider font-cinzel text-stone-400 mb-1 flex items-center justify-between">
+                        <span>Atributos:</span>
+                      </div>
+                      <div className="grid grid-cols-6 gap-1 text-center">
+                        <div className="bg-[#121316] rounded py-0.5 border border-stone-800/80">
+                          <div className="text-[8px] font-cinzel font-bold text-stone-400">FUE</div>
+                          <div className="text-[10px] font-mono font-bold text-amber-300">{member.abilities.str}</div>
+                          <div className="text-[8px] font-mono text-stone-400">{formatMod(member.abilities.str)}</div>
+                        </div>
+                        <div className="bg-[#121316] rounded py-0.5 border border-stone-800/80">
+                          <div className="text-[8px] font-cinzel font-bold text-stone-400">DES</div>
+                          <div className="text-[10px] font-mono font-bold text-amber-300">{member.abilities.dex}</div>
+                          <div className="text-[8px] font-mono text-stone-400">{formatMod(member.abilities.dex)}</div>
+                        </div>
+                        <div className="bg-[#121316] rounded py-0.5 border border-stone-800/80">
+                          <div className="text-[8px] font-cinzel font-bold text-stone-400">CON</div>
+                          <div className="text-[10px] font-mono font-bold text-amber-300">{member.abilities.con}</div>
+                          <div className="text-[8px] font-mono text-stone-400">{formatMod(member.abilities.con)}</div>
+                        </div>
+                        <div className="bg-[#121316] rounded py-0.5 border border-stone-800/80">
+                          <div className="text-[8px] font-cinzel font-bold text-stone-400">INT</div>
+                          <div className="text-[10px] font-mono font-bold text-amber-300">{member.abilities.int}</div>
+                          <div className="text-[8px] font-mono text-stone-400">{formatMod(member.abilities.int)}</div>
+                        </div>
+                        <div className="bg-[#121316] rounded py-0.5 border border-stone-800/80">
+                          <div className="text-[8px] font-cinzel font-bold text-stone-400">SAB</div>
+                          <div className="text-[10px] font-mono font-bold text-amber-300">{member.abilities.wis}</div>
+                          <div className="text-[8px] font-mono text-stone-400">{formatMod(member.abilities.wis)}</div>
+                        </div>
+                        <div className="bg-[#121316] rounded py-0.5 border border-stone-800/80">
+                          <div className="text-[8px] font-cinzel font-bold text-stone-400">CAR</div>
+                          <div className="text-[10px] font-mono font-bold text-amber-300">{member.abilities.cha}</div>
+                          <div className="text-[8px] font-mono text-stone-400">{formatMod(member.abilities.cha)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bolsa de Monedas */}
+                  {member.currency && (
+                    <div className="mt-1.5 pt-1 border-t border-stone-800/40 flex items-center justify-between text-[10px] font-mono bg-[#131418] px-2 py-0.5 rounded border border-stone-800/60">
+                      <span className="flex items-center gap-1 text-stone-400 text-[9px] font-cinzel font-semibold">
+                        <Coins className="w-3 h-3 text-amber-400" /> Bolsa:
+                      </span>
+                      <div className="flex items-center gap-1.5 text-stone-300 text-[9px]">
+                        <span className="text-amber-300 font-bold" title="Piezas de Oro">
+                          {member.currency.gp ?? 0} <span className="text-[8px] text-amber-400/80">PO</span>
+                        </span>
+                        <span className="text-stone-300" title="Piezas de Plata">
+                          {member.currency.sp ?? 0} <span className="text-[8px] text-stone-400">PP</span>
+                        </span>
+                        <span className="text-amber-600" title="Piezas de Cobre">
+                          {member.currency.cp ?? 0} <span className="text-[8px] text-amber-700">PC</span>
+                        </span>
+                        {((member.currency.pp ?? 0) > 0 || (member.currency.ep ?? 0) > 0) && (
+                          <span className="text-cyan-300 text-[8px]" title="Platino / Electro">
+                            +{member.currency.pp ?? 0}PPT
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* HP Bar */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-mono">
-                    <span className="flex items-center gap-1 text-red-400">
-                      <Heart className="w-3 h-3" /> PG:
-                    </span>
-                    <span className="text-stone-300">
-                      {member.currentHp} / {member.maxHp}
-                    </span>
-                  </div>
-                  <div className="h-1.5 bg-stone-900 rounded-full overflow-hidden border border-stone-800">
-                    <div
-                      className={`h-full ${
-                        member.currentHp / member.maxHp > 0.5
-                          ? 'bg-emerald-500'
-                          : member.currentHp / member.maxHp > 0.2
-                          ? 'bg-amber-500'
-                          : 'bg-red-500'
-                      }`}
-                      style={{ width: `${Math.min(100, Math.max(0, (member.currentHp / member.maxHp) * 100))}%` }}
-                    />
-                  </div>
+                <div className="mt-2 pt-2 border-t border-stone-800/80 flex items-center justify-between text-[10px] text-stone-400">
+                  <span className="flex items-center gap-1">
+                    <Shield className="w-3 h-3 text-amber-500" /> CA: <strong className="text-stone-200">{member.ac}</strong>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Eye className="w-3 h-3 text-blue-400" /> PP: <strong className="text-stone-200">{member.passivePerception}</strong>
+                  </span>
                 </div>
               </div>
+            );
+          })}
 
-              <div className="mt-2 pt-2 border-t border-stone-800/80 flex items-center justify-between text-[10px] text-stone-400">
-                <span className="flex items-center gap-1">
-                  <Shield className="w-3 h-3 text-amber-500" /> CA: <strong>{member.ac}</strong>
+          {/* 6. Combatientes en Escena (Enemigos y Aliados) activados por el DM */}
+          {showCombatantsOnTable && liveCombatants && liveCombatants.length > 0 && (
+            <div className="col-span-full mt-2 pt-3 border-t border-stone-800/80 animate-in fade-in duration-300">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Skull className="w-4 h-4 text-red-400" />
+                  <span className="font-cinzel font-bold text-xs uppercase tracking-wider text-stone-300">
+                    Combatientes en Escena ({liveCombatants.length})
+                  </span>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-red-950/80 text-red-300 border border-red-800 font-mono font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                    En Vivo en Mesa
+                  </span>
+                </div>
+                <span className="text-[10px] text-stone-400 font-cinzel">
+                  Mostrado por el Dungeon Master
                 </span>
-                <span>
-                  PP: <strong>{member.passivePerception}</strong>
-                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                {liveCombatants.map((c) => {
+                  const isAlly = c.faction === 'ally';
+                  const hpRatio = c.maxHp > 0 ? c.hp / c.maxHp : 0;
+                  return (
+                    <div
+                      key={c.id}
+                      className={`rounded-xl p-2.5 border shadow-md flex flex-col justify-between transition relative overflow-hidden ${
+                        isAlly
+                          ? 'bg-gradient-to-br from-[#101b13] via-[#141a16] to-[#0e1410] border-emerald-600/70 text-emerald-100'
+                          : 'bg-gradient-to-br from-[#221012] via-[#1a1215] to-[#140e10] border-red-700/70 text-red-100'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1 gap-1">
+                          <span
+                            className="font-cinzel font-bold text-[11px] truncate text-stone-100 block"
+                            title={c.name}
+                          >
+                            {c.name}
+                          </span>
+                          <span
+                            className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded font-mono shrink-0 ${
+                              isAlly
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                                : 'bg-red-950 text-red-300 border border-red-800'
+                            }`}
+                          >
+                            {isAlly ? 'Aliado' : 'Enemigo'}
+                          </span>
+                        </div>
+
+                        {/* HP Mini Bar */}
+                        <div className="space-y-0.5 my-1">
+                          <div className="flex items-center justify-between text-[9px] font-mono">
+                            <span className="flex items-center gap-0.5 text-stone-400 font-bold">
+                              <Heart className="w-2.5 h-2.5 text-red-400" /> PG:
+                            </span>
+                            <span className="font-bold text-stone-200">
+                              {c.hp} / {c.maxHp}
+                            </span>
+                          </div>
+                          <div className="h-1.5 bg-stone-900 rounded-full overflow-hidden border border-stone-800">
+                            <div
+                              className={`h-full transition-all duration-300 ${
+                                hpRatio > 0.5
+                                  ? isAlly ? 'bg-emerald-500' : 'bg-red-500'
+                                  : hpRatio > 0.2
+                                  ? 'bg-amber-500'
+                                  : 'bg-red-600 animate-pulse'
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(0, hpRatio * 100))}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-1 pt-1 border-t border-stone-800/80 flex items-center justify-between text-[9px] text-stone-400 font-mono">
+                        <span className="flex items-center gap-0.5">
+                          <Shield className="w-2.5 h-2.5 text-amber-500" /> CA: <strong className="text-stone-200">{c.ac}</strong>
+                        </span>
+                        <span className="flex items-center gap-0.5">
+                          <Eye className="w-2.5 h-2.5 text-blue-400" /> PP: <strong className="text-stone-200">{c.passivePerception}</strong>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-          ))}
+          )}
         </div>
       )}
 

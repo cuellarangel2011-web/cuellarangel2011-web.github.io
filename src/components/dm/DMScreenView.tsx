@@ -343,16 +343,21 @@ export const DMScreenView: React.FC<DMScreenViewProps> = ({
     setShowResetCombatModal(false);
   };
 
-  // Add Monster to Active Combat
-  const handleAddMonsterToCombat = (mon: MonsterRecord) => {
+  // Add Monster to Active Combat with Faction (Enemy or Ally)
+  const handleAddMonsterToCombat = (mon: MonsterRecord, faction: 'enemy' | 'ally' = 'enemy') => {
+    const wisMod = Math.floor(((mon.wis || 10) - 10) / 2);
+    const pp = 10 + wisMod;
+
     const newCombatant: Combatant = {
-      id: `c-mon-${Date.now()}`,
+      id: `c-mon-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: `${mon.name} #${activeEncounter.combatants.filter((c) => c.name.startsWith(mon.name)).length + 1}`,
-      initiative: Math.floor(Math.random() * 20) + 1 + Math.floor((mon.dex - 10) / 2),
+      initiative: Math.floor(Math.random() * 20) + 1 + Math.floor(((mon.dex || 10) - 10) / 2),
       hp: mon.maxHp,
       maxHp: mon.maxHp,
       ac: mon.ac,
+      passivePerception: pp,
       isPlayer: false,
+      faction,
       conditions: [],
     };
 
@@ -366,6 +371,37 @@ export const DMScreenView: React.FC<DMScreenViewProps> = ({
       },
     });
     setActiveTab('initiative');
+  };
+
+  // Toggle combatant faction (Ally <-> Enemy)
+  const handleToggleCombatantFaction = (combatantId: string) => {
+    const updated = activeEncounter.combatants.map((c) => {
+      if (c.id === combatantId) {
+        const nextFaction: 'enemy' | 'ally' = c.faction === 'ally' ? 'enemy' : 'ally';
+        return { ...c, faction: nextFaction };
+      }
+      return c;
+    });
+
+    onUpdateWorkspace({
+      ...workspace,
+      activeEncounter: {
+        ...activeEncounter,
+        combatants: updated,
+      },
+    });
+  };
+
+  // Toggle broadcast of enemies to live player table (Offline <-> Online)
+  const handleToggleBroadcastEnemies = () => {
+    const nextBroadcast = !activeEncounter.broadcastEnemiesToTable;
+    onUpdateWorkspace({
+      ...workspace,
+      activeEncounter: {
+        ...activeEncounter,
+        broadcastEnemiesToTable: nextBroadcast,
+      },
+    });
   };
 
   // Roll monster attack directly from card
@@ -1025,6 +1061,32 @@ export const DMScreenView: React.FC<DMScreenViewProps> = ({
 
             <div className="flex flex-wrap items-center gap-2">
               <button
+                type="button"
+                onClick={handleToggleBroadcastEnemies}
+                className={`px-3 py-1.5 rounded-lg text-xs font-cinzel font-bold flex items-center gap-1.5 transition shadow border ${
+                  activeEncounter.broadcastEnemiesToTable
+                    ? 'bg-red-950/90 hover:bg-red-900 border-red-500 text-red-200 shadow-red-950'
+                    : 'bg-stone-800 hover:bg-stone-700 border-stone-700 text-stone-400'
+                }`}
+                title={
+                  activeEncounter.broadcastEnemiesToTable
+                    ? 'Combatientes visibles en la mesa en vivo (ONLINE). Haz clic para ocultar.'
+                    : 'Activar para que los combatientes aparezcan en la mesa debajo de los jugadores (OFFLINE).'
+                }
+              >
+                <Radio
+                  className={`w-3.5 h-3.5 ${
+                    activeEncounter.broadcastEnemiesToTable ? 'text-red-400 animate-pulse' : 'text-stone-500'
+                  }`}
+                />
+                <span>
+                  {activeEncounter.broadcastEnemiesToTable
+                    ? 'Enemigos en Mesa: ONLINE'
+                    : 'Enemigos en Mesa: OFFLINE'}
+                </span>
+              </button>
+
+              <button
                 onClick={handleSortInitiative}
                 className="px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-semibold font-cinzel border border-stone-700 transition"
               >
@@ -1108,13 +1170,22 @@ export const DMScreenView: React.FC<DMScreenViewProps> = ({
                           <div className="flex items-center gap-2">
                             <span className="font-cinzel font-bold text-stone-100 text-base">{c.name}</span>
                             {c.isPlayer ? (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 font-mono">
                                 Jugador
                               </span>
                             ) : (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-950 text-red-300 border border-red-800">
-                                Monstruo
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleCombatantFaction(c.id)}
+                                className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border transition ${
+                                  c.faction === 'ally'
+                                    ? 'bg-emerald-950 text-emerald-300 border-emerald-700 hover:bg-emerald-900'
+                                    : 'bg-red-950 text-red-300 border-red-800 hover:bg-red-900'
+                                }`}
+                                title="Clic para alternar entre Enemigo (Rojo) y Aliado (Verde)"
+                              >
+                                {c.faction === 'ally' ? '🟢 Aliado' : '🔴 Enemigo'}
+                              </button>
                             )}
                           </div>
                           <div className="text-xs text-stone-400 flex items-center gap-3 mt-0.5">
@@ -1123,6 +1194,9 @@ export const DMScreenView: React.FC<DMScreenViewProps> = ({
                             </span>
                             <span>
                               CA: <strong className="text-stone-200">{c.ac}</strong>
+                            </span>
+                            <span>
+                              PP: <strong className="text-stone-300">{c.passivePerception ?? 10}</strong>
                             </span>
                           </div>
                         </div>
@@ -1598,13 +1672,24 @@ export const DMScreenView: React.FC<DMScreenViewProps> = ({
                 </div>
 
                 <div className="pt-2 border-t border-stone-800 flex items-center justify-between">
-                  <button
-                    onClick={() => handleAddMonsterToCombat(mon)}
-                    className="flex-1 py-1 px-2 rounded bg-amber-950/80 hover:bg-amber-900 border border-amber-800 text-amber-300 text-xs font-cinzel font-bold flex items-center justify-center gap-1 transition"
-                  >
-                    <Sword className="w-3.5 h-3.5" />
-                    <span>Llevar a Combate</span>
-                  </button>
+                  <div className="flex-1 flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleAddMonsterToCombat(mon, 'enemy')}
+                      className="flex-1 py-1 px-2 rounded bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-300 text-xs font-cinzel font-bold flex items-center justify-center gap-1 transition shadow-sm"
+                      title="Llevar a combate como Enemigo (Rojo)"
+                    >
+                      <Skull className="w-3.5 h-3.5 text-red-400" />
+                      <span>+ Enemigo</span>
+                    </button>
+                    <button
+                      onClick={() => handleAddMonsterToCombat(mon, 'ally')}
+                      className="py-1 px-2 rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 text-xs font-cinzel font-bold flex items-center justify-center gap-1 transition shadow-sm"
+                      title="Llevar a combate como Aliado (Verde)"
+                    >
+                      <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>+ Aliado</span>
+                    </button>
+                  </div>
                   <div className="flex items-center gap-1 ml-2">
                     <button
                       onClick={() =>
