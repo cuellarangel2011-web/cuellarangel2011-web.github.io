@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Settings,
@@ -17,8 +17,15 @@ import {
   HelpCircle,
   Sword,
   BookOpen,
+  Users,
+  Database,
+  Download,
+  Check,
+  UserCheck,
+  UserX,
+  RefreshCw,
 } from 'lucide-react';
-import { HostSettings, ChangelogEntry } from '../../types/dnd';
+import { HostSettings, ChangelogEntry, UserAccountPublic } from '../../types/dnd';
 
 interface HostSettingsModalProps {
   isOpen: boolean;
@@ -33,10 +40,10 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
   settings,
   onSaveSettings,
 }) => {
-  const [activeTab, setActiveTab] = useState<'app' | 'ai' | 'security' | 'changelog' | 'notice'>('app');
+  const [activeTab, setActiveTab] = useState<'app' | 'ai' | 'security' | 'changelog' | 'users' | 'vault' | 'notice'>('app');
 
   // App & Branding
-  const [headerTitle, setHeaderTitle] = useState<string>(settings.headerTitle || 'GRIMORIO 5E');
+  const [headerTitle, setHeaderTitle] = useState<string>(settings.headerTitle || 'WeRoll');
   const [headerSubtitle, setHeaderSubtitle] = useState<string>(
     settings.headerSubtitle || 'Companion & DM Suite v0.1'
   );
@@ -44,7 +51,7 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
 
   // AI & Models
   const [apiKey, setApiKey] = useState<string>(settings.apiKeyOverride || '');
-  const [aiModel, setAiModel] = useState<string>(settings.aiModel || 'gemini-2.5-flash');
+  const [aiModel, setAiModel] = useState<string>(settings.aiModel || 'gemini-flash-lite-latest');
   const [oracleWelcome, setOracleWelcome] = useState<string>(
     settings.oracleWelcomeMessage ||
       'Saludos, viajero. Soy el Sabio Arcano, tu árbitro y custodio de las reglas de 5E. ¿Qué duda deseas resolver hoy?'
@@ -60,11 +67,11 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
   // Developer Global Notice
   const [devNoticeEnabled, setDevNoticeEnabled] = useState<boolean>(settings.developerNotice?.enabled ?? true);
   const [devNoticeTitle, setDevNoticeTitle] = useState<string>(
-    settings.developerNotice?.title || 'Grimorio 5E • Actualizaciones v0.1'
+    settings.developerNotice?.title || 'WeRoll • Actualizaciones v0.1'
   );
   const [devNoticeContent, setDevNoticeContent] = useState<string>(
     settings.developerNotice?.content ||
-      'Bienvenido a Grimorio 5E v0.1. Se ha implementado el sistema de roles protegidos (Jugador, DM, Moderador), carpetas jerárquicas hasta 3 niveles, objetos y conjuros para el DM con compendio genérico, mensaje en vivo del DM en la mesa y reinicio de combates.'
+      'Bienvenido a WeRoll v0.1. Se ha implementado el Hub de partidas, salas protegidas con clave, aprobación de usuarios, estados AFK, respaldos rotativos en servidor y borrador IA relacional.'
   );
 
   // Changelog List
@@ -73,9 +80,109 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
   const [newVersionTitle, setNewVersionTitle] = useState<string>('');
   const [newVersionChanges, setNewVersionChanges] = useState<string>('');
 
+  // Users Admin Management State
+  const [usersList, setUsersList] = useState<UserAccountPublic[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false);
+
+  // Vault Server State
+  const [vaultSheets, setVaultSheets] = useState<any[]>([]);
+  const [vaultWorlds, setVaultWorlds] = useState<any[]>([]);
+  const [isLoadingVault, setIsLoadingVault] = useState<boolean>(false);
+
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
-  if (!isOpen) return null;
+  // Fetch users when switching to users tab
+  useEffect(() => {
+    if (isOpen && activeTab === 'users') {
+      fetchUsers();
+    } else if (isOpen && activeTab === 'vault') {
+      fetchVault();
+    }
+  }, [isOpen, activeTab]);
+
+  const fetchUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const res = await fetch('/api/admin/users');
+      if (res.ok) {
+        const data = await res.json();
+        setUsersList(data.users || []);
+      }
+    } catch (e) {
+      console.error('Error fetching users:', e);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  const fetchVault = async () => {
+    setIsLoadingVault(true);
+    try {
+      const [resSheets, resWorlds] = await Promise.all([
+        fetch('/api/vault/sheets'),
+        fetch('/api/vault/worlds'),
+      ]);
+      if (resSheets.ok) {
+        const d = await resSheets.json();
+        setVaultSheets(d.sheets || []);
+      }
+      if (resWorlds.ok) {
+        const d = await resWorlds.json();
+        setVaultWorlds(d.worlds || []);
+      }
+    } catch (e) {
+      console.error('Error fetching vault data:', e);
+    } finally {
+      setIsLoadingVault(false);
+    }
+  };
+
+  const handleApproveUser = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/approve`, { method: 'POST' });
+      if (res.ok) {
+        fetchUsers();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleRejectUser = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/reject`, { method: 'POST' });
+      if (res.ok) {
+        fetchUsers();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleChangeRole = async (userId: string, newRole: string) => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole }),
+      });
+      if (res.ok) {
+        fetchUsers();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const downloadJSON = (data: any, filename: string) => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleAddChangelogEntry = (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +215,7 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
 
     onSaveSettings({
       ...settings,
-      headerTitle: headerTitle.trim() || 'GRIMORIO 5E',
+      headerTitle: headerTitle.trim() || 'WeRoll',
       headerSubtitle: headerSubtitle.trim() || 'Companion & DM Suite v0.1',
       headerLogoIcon,
       apiKeyOverride: apiKey.trim(),
@@ -133,13 +240,15 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
     }, 700);
   };
 
+  if (!isOpen) return null;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md"
       role="dialog"
       aria-modal="true"
     >
-      <div className="relative w-full max-w-2xl bg-[#181920] border-2 border-stone-700 rounded-2xl shadow-2xl p-6 text-stone-200 flex flex-col max-h-[92vh]">
+      <div className="relative w-full max-w-4xl bg-[#181920] border-2 border-stone-700 rounded-2xl shadow-2xl p-6 text-stone-200 flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-stone-800 mb-4">
           <div className="flex items-center gap-2.5">
@@ -148,10 +257,10 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
             </div>
             <div>
               <h3 className="font-cinzel font-bold text-lg text-amber-300">
-                Ajustes Privados del Host & Creador
+                Ajustes Privados del Administrador & Bóveda
               </h3>
               <p className="text-[11px] text-stone-400">
-                Configuración exclusiva del moderador: branding, IA, claves y blog de versiones
+                Panel maestro de WeRoll: aprobación de usuarios, descargas de base de datos, branding e IA
               </p>
             </div>
           </div>
@@ -165,6 +274,32 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
 
         {/* Navigation Tabs */}
         <div className="flex items-center gap-1.5 border-b border-stone-800 pb-3 mb-4 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab('users')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-cinzel font-semibold transition shrink-0 ${
+              activeTab === 'users'
+                ? 'bg-blue-600 text-white shadow'
+                : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Usuarios & Aprobaciones</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('vault')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-cinzel font-semibold transition shrink-0 ${
+              activeTab === 'vault'
+                ? 'bg-emerald-700 text-white shadow'
+                : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Bóveda del Servidor</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setActiveTab('app')}
@@ -196,7 +331,7 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
             onClick={() => setActiveTab('security')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-cinzel font-semibold transition shrink-0 ${
               activeTab === 'security'
-                ? 'bg-emerald-700 text-white shadow'
+                ? 'bg-red-700 text-white shadow'
                 : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
             }`}
           >
@@ -209,7 +344,7 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
             onClick={() => setActiveTab('changelog')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-cinzel font-semibold transition shrink-0 ${
               activeTab === 'changelog'
-                ? 'bg-blue-700 text-white shadow'
+                ? 'bg-stone-700 text-white shadow'
                 : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
             }`}
           >
@@ -222,7 +357,7 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
             onClick={() => setActiveTab('notice')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-cinzel font-semibold transition shrink-0 ${
               activeTab === 'notice'
-                ? 'bg-rose-700 text-white shadow'
+                ? 'bg-amber-700 text-white shadow'
                 : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
             }`}
           >
@@ -232,50 +367,253 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
         </div>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1.5 custom-scrollbar">
-          {/* TAB 1: APP & BRANDING */}
+        <div className="overflow-y-auto flex-1 pr-1.5 space-y-4">
+          {/* ========================================================= */}
+          {/* 1. USERS & APPROVALS TAB                                  */}
+          {/* ========================================================= */}
+          {activeTab === 'users' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-cinzel font-bold text-sm text-blue-300">
+                    Cuentas Registradas y Solicitudes de Acceso
+                  </h4>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Revisa las solicitudes de nuevos jugadores y DMs. Aprueba o deniega su acceso a la plataforma.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchUsers}
+                  disabled={isLoadingUsers}
+                  className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs flex items-center gap-1"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                  <span>Actualizar</span>
+                </button>
+              </div>
+
+              {/* Users Table */}
+              <div className="bg-[#121316] border border-stone-800 rounded-xl overflow-hidden shadow">
+                <table className="w-full text-left text-xs text-stone-300">
+                  <thead className="bg-[#1a1b24] text-[11px] font-cinzel text-stone-400 uppercase border-b border-stone-800">
+                    <tr>
+                      <th className="py-2.5 px-3">Correo</th>
+                      <th className="py-2.5 px-3">Nombre en Mesa</th>
+                      <th className="py-2.5 px-3">Rol</th>
+                      <th className="py-2.5 px-3">Estado</th>
+                      <th className="py-2.5 px-3 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-800/80">
+                    {usersList.map((u) => (
+                      <tr key={u.id} className="hover:bg-[#181922] transition">
+                        <td className="py-2.5 px-3 font-mono text-[11px] text-stone-200">
+                          {u.email}
+                        </td>
+                        <td className="py-2.5 px-3 font-medium">
+                          {u.displayName}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <select
+                            value={u.role}
+                            onChange={(e) => handleChangeRole(u.id, e.target.value)}
+                            className="bg-[#181920] border border-stone-700 rounded px-2 py-0.5 text-xs text-stone-200"
+                          >
+                            <option value="player">Jugador</option>
+                            <option value="dm">Dungeon Master</option>
+                            <option value="moderator">Moderador</option>
+                          </select>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider font-mono ${
+                              u.status === 'approved'
+                                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/60'
+                                : u.status === 'pending'
+                                ? 'bg-amber-950/80 text-amber-300 border border-amber-700/60 animate-pulse'
+                                : 'bg-red-950/80 text-red-300 border border-red-700/60'
+                            }`}
+                          >
+                            {u.status === 'approved' ? 'Aprobado' : u.status === 'pending' ? 'Pendiente' : 'Rechazado'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {u.status === 'pending' ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleApproveUser(u.id)}
+                                className="px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold flex items-center gap-1 shadow"
+                              >
+                                <UserCheck className="w-3 h-3" />
+                                Aprobar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRejectUser(u.id)}
+                                className="px-2 py-1 rounded bg-red-900/80 hover:bg-red-800 text-red-200 text-[11px] flex items-center gap-1"
+                              >
+                                <UserX className="w-3 h-3" />
+                                Rechazar
+                              </button>
+                            </div>
+                          ) : u.status === 'rejected' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleApproveUser(u.id)}
+                              className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 text-[11px]"
+                            >
+                              Reactivar
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-stone-500">Activo</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* 2. SERVER VAULT & DATABASE TAB                            */}
+          {/* ========================================================= */}
+          {activeTab === 'vault' && (
+            <div className="space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#121316] border border-stone-800 rounded-xl p-4">
+                <div>
+                  <h4 className="font-cinzel font-bold text-sm text-emerald-300 flex items-center gap-2">
+                    <Database className="w-4 h-4 text-emerald-400" />
+                    Base de Datos Persistente en Servidor
+                  </h4>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Todas las hojas de personajes (Player Sheets) y mundos (World Sheets) se sincronizan en la nube del servidor.
+                  </p>
+                </div>
+
+                <a
+                  href="/api/vault/backup-all"
+                  download
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-700 to-emerald-600 hover:from-emerald-600 hover:to-emerald-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-2 shrink-0 justify-center"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Descargar Base de Datos Completa</span>
+                </a>
+              </div>
+
+              {/* World Sheets in Server */}
+              <div className="space-y-2">
+                <h5 className="font-cinzel font-bold text-xs uppercase text-purple-300 flex items-center gap-1.5">
+                  <Shield className="w-4 h-4 text-purple-400" />
+                  World Sheets Guardados en el Servidor ({vaultWorlds.length})
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {vaultWorlds.map((w) => (
+                    <div
+                      key={w.id}
+                      className="bg-[#121316] border border-stone-800 rounded-xl p-3 flex items-center justify-between shadow"
+                    >
+                      <div>
+                        <strong className="block text-xs text-stone-200 font-cinzel">{w.name}</strong>
+                        <span className="block text-[10px] text-stone-500 font-mono">
+                          Mesa: {w.roomCode} • Dueño: {w.ownerEmail}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => downloadJSON(w, `world-${w.name.toLowerCase().replace(/\s+/g, '-')}.json`)}
+                        className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-purple-300"
+                        title="Descargar World Sheet JSON"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {vaultWorlds.length === 0 && (
+                    <div className="col-span-2 text-center py-4 text-xs text-stone-500">
+                      No hay World Sheets sincronizados en el servidor aún.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Player Sheets in Server */}
+              <div className="space-y-2">
+                <h5 className="font-cinzel font-bold text-xs uppercase text-amber-300 flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-amber-500" />
+                  Player Sheets Guardadas en el Servidor ({vaultSheets.length})
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {vaultSheets.map((s) => (
+                    <div
+                      key={s.id}
+                      className="bg-[#121316] border border-stone-800 rounded-xl p-3 flex items-center justify-between shadow"
+                    >
+                      <div>
+                        <strong className="block text-xs text-stone-200 font-cinzel">{s.name}</strong>
+                        <span className="block text-[10px] text-stone-500 font-mono">
+                          {s.character?.race} {s.character?.characterClass} Niv {s.character?.level} • Dueño: {s.ownerEmail}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => downloadJSON(s.character, `sheet-${s.name.toLowerCase().replace(/\s+/g, '-')}.json`)}
+                        className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-300"
+                        title="Descargar Player Sheet JSON"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {vaultSheets.length === 0 && (
+                    <div className="col-span-2 text-center py-4 text-xs text-stone-500">
+                      No hay Player Sheets sincronizadas en el servidor aún.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* 3. APP & BRANDING TAB                                     */}
+          {/* ========================================================= */}
           {activeTab === 'app' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
+            <div className="space-y-4">
               <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
                 <label className="block text-xs font-cinzel font-bold text-amber-400 mb-1">
                   Título Principal del Encabezado
                 </label>
-                <p className="text-[11px] text-stone-400 mb-2">
-                  Nombre principal de la aplicación que se muestra en la barra superior.
-                </p>
                 <input
                   type="text"
                   value={headerTitle}
                   onChange={(e) => setHeaderTitle(e.target.value)}
-                  placeholder="GRIMORIO 5E"
+                  placeholder="WeRoll"
                   className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs font-cinzel font-bold tracking-wider"
                 />
               </div>
 
               <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
                 <label className="block text-xs font-cinzel font-bold text-amber-400 mb-1">
-                  Subtítulo de la Cabecera & Versión
+                  Subtítulo con Número de Versión
                 </label>
-                <p className="text-[11px] text-stone-400 mb-2">
-                  Texto secundario bajo el título. Puedes indicar la versión actual (ej. Companion & DM Suite v0.1).
-                </p>
                 <input
                   type="text"
                   value={headerSubtitle}
                   onChange={(e) => setHeaderSubtitle(e.target.value)}
                   placeholder="Companion & DM Suite v0.1"
-                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs font-mono"
+                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs"
                 />
               </div>
 
               <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <label className="block text-xs font-cinzel font-bold text-amber-400 mb-1">
-                  Icono / Logo de la Aplicación
+                <label className="block text-xs font-cinzel font-bold text-amber-400 mb-2">
+                  Icono del Logo
                 </label>
-                <p className="text-[11px] text-stone-400 mb-3">
-                  Selecciona el emblema que acompaña al título en el encabezado.
-                </p>
-                <div className="grid grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-4 gap-2">
                   {[
                     { id: 'shield', label: 'Escudo', icon: Shield },
                     { id: 'sword', label: 'Espada', icon: Sword },
@@ -288,14 +626,14 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
                         key={item.id}
                         type="button"
                         onClick={() => setHeaderLogoIcon(item.id)}
-                        className={`p-3 rounded-xl border flex flex-col items-center gap-1.5 transition ${
+                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border text-xs transition ${
                           headerLogoIcon === item.id
-                            ? 'bg-amber-950/80 border-amber-500 text-amber-300 shadow'
-                            : 'bg-[#181920] border-stone-700 text-stone-400 hover:text-stone-200'
+                            ? 'bg-amber-600/30 border-amber-500 text-amber-300 font-bold'
+                            : 'bg-[#181920] border-stone-800 text-stone-400 hover:border-stone-700'
                         }`}
                       >
                         <IconCmp className="w-5 h-5" />
-                        <span className="text-[10px] font-semibold">{item.label}</span>
+                        <span>{item.label}</span>
                       </button>
                     );
                   })}
@@ -304,17 +642,30 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: AI & MODELS */}
+          {/* ========================================================= */}
+          {/* 4. AI & MODELS TAB                                        */}
+          {/* ========================================================= */}
           {activeTab === 'ai' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
+            <div className="space-y-4">
               <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <label className="block text-xs font-cinzel font-bold text-purple-400 mb-1 flex items-center gap-1.5">
-                  <Key className="w-4 h-4 text-purple-400" />
+                <label className="block text-xs font-cinzel font-bold text-purple-400 mb-1">
+                  Modelo de Inteligencia Artificial (Gemini)
+                </label>
+                <select
+                  value={aiModel}
+                  onChange={(e) => setAiModel(e.target.value)}
+                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs font-mono cursor-pointer"
+                >
+                  <option value="gemini-flash-lite-latest">Gemini Flash Lite Latest (Recomendado: Ultrarrápido y preciso)</option>
+                  <option value="gemini-3.8-flash">Gemini 3.8 Flash (General y equilibrado)</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (Razonamiento profundo para tramas)</option>
+                </select>
+              </div>
+
+              <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
+                <label className="block text-xs font-cinzel font-bold text-amber-400 mb-1">
                   Clave API de Gemini Personalizada (Opcional)
                 </label>
-                <p className="text-[11px] text-stone-400 mb-2">
-                  Si deseas que la app use tu propia clave API personal de Gemini, ingrésala aquí. Se guardará localmente.
-                </p>
                 <input
                   type="password"
                   value={apiKey}
@@ -325,70 +676,28 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
               </div>
 
               <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <label className="block text-xs font-cinzel font-bold text-purple-400 mb-1 flex items-center gap-1.5">
-                  <Cpu className="w-4 h-4 text-purple-400" />
-                  Modelo de Inteligencia Artificial
-                </label>
-                <p className="text-[11px] text-stone-400 mb-2">
-                  Selecciona el motor de Gemini para el Oráculo Arcano y los generadores del DM.
-                </p>
-                <select
-                  value={aiModel}
-                  onChange={(e) => setAiModel(e.target.value)}
-                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs font-mono cursor-pointer"
-                >
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado: Ultrarrápido y preciso)</option>
-                  <option value="gemini-2.5-pro">Gemini 2.5 Pro (Razonamiento profundo para tramas)</option>
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash (Compatible y ligero)</option>
-                </select>
-              </div>
-
-              <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <label className="block text-xs font-cinzel font-bold text-amber-400 mb-1 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-amber-400" />
+                <label className="block text-xs font-cinzel font-bold text-amber-400 mb-1">
                   Mensaje de Saludo del Sabio Arcano
                 </label>
-                <p className="text-[11px] text-stone-400 mb-2">
-                  Mensaje inicial con el que el oráculo da la bienvenida a los jugadores al abrir el modal.
-                </p>
                 <textarea
                   value={oracleWelcome}
                   onChange={(e) => setOracleWelcome(e.target.value)}
                   rows={2}
-                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs leading-relaxed"
+                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs"
                 />
               </div>
             </div>
           )}
 
-          {/* TAB 3: SECURITY & PASSWORDS */}
+          {/* ========================================================= */}
+          {/* 5. SECURITY & PASSWORDS TAB                               */}
+          {/* ========================================================= */}
           {activeTab === 'security' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
+            <div className="space-y-4">
               <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <label className="block text-xs font-cinzel font-bold text-purple-400 mb-1 flex items-center gap-1.5">
-                  <Shield className="w-4 h-4 text-purple-400" />
-                  Contraseña del Dungeon Master
+                <label className="block text-xs font-cinzel font-bold text-blue-400 mb-1">
+                  Contraseña Maestra de Administrador / Moderador
                 </label>
-                <p className="text-[11px] text-stone-400 mb-2">
-                  Protege la pantalla del DM. Si está configurada, se requerirá al seleccionar el perfil de Dungeon Master.
-                </p>
-                <input
-                  type="password"
-                  value={dmPassword}
-                  onChange={(e) => setDmPassword(e.target.value)}
-                  placeholder="Dejar en blanco para acceso libre de DM"
-                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs font-mono"
-                />
-              </div>
-
-              <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <label className="block text-xs font-cinzel font-bold text-blue-400 mb-1 flex items-center gap-1.5">
-                  <Key className="w-4 h-4 text-blue-400" />
-                  Contraseña de Moderador / Creador
-                </label>
-                <p className="text-[11px] text-stone-400 mb-2">
-                  Clave necesaria para acceder a esta ventana de Ajustes Privados del Host. (Por defecto: admin).
-                </p>
                 <input
                   type="password"
                   value={moderatorPassword}
@@ -399,147 +708,77 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
               </div>
 
               <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <label className="block text-xs font-cinzel font-bold text-amber-400 mb-1 flex items-center gap-1.5">
-                  <Shield className="w-4 h-4 text-amber-400" />
-                  Modo de Visualización de Roles (Jugador / DM)
+                <label className="block text-xs font-cinzel font-bold text-purple-400 mb-1">
+                  Contraseña Predeterminada del Dungeon Master
                 </label>
-                <p className="text-[11px] text-stone-400 mb-3">
-                  Determina si los usuarios ven únicamente su rol asignado o si se les permite alternar entre vista de Jugador y DM.
-                </p>
-                <div className="space-y-2">
-                  <label className="flex items-start gap-3 p-3 rounded-xl border border-stone-800 bg-[#181920] cursor-pointer hover:border-amber-600/50 transition">
-                    <input
-                      type="radio"
-                      name="roleMode"
-                      value="strict"
-                      checked={roleSwitchingAllowed === 'strict'}
-                      onChange={() => setRoleSwitchingAllowed('strict')}
-                      className="mt-1 text-amber-500 focus:ring-0"
-                    />
-                    <div>
-                      <div className="text-xs font-bold text-stone-200">
-                        Modo Estricto (Recomendado)
-                      </div>
-                      <div className="text-[11px] text-stone-400">
-                        Si un usuario inicia como Jugador, sólo ve la hoja y funciones de Jugador. Si inicia como DM, sólo ve la suite del DM. El Moderador siempre puede supervisar ambos.
-                      </div>
-                    </div>
-                  </label>
-
-                  <label className="flex items-start gap-3 p-3 rounded-xl border border-stone-800 bg-[#181920] cursor-pointer hover:border-amber-600/50 transition">
-                    <input
-                      type="radio"
-                      name="roleMode"
-                      value="open"
-                      checked={roleSwitchingAllowed === 'open'}
-                      onChange={() => setRoleSwitchingAllowed('open')}
-                      className="mt-1 text-amber-500 focus:ring-0"
-                    />
-                    <div>
-                      <div className="text-xs font-bold text-stone-200">
-                        Modo Abierto / Dual
-                      </div>
-                      <div className="text-[11px] text-stone-400">
-                        Muestra el conmutador de Jugador / Dungeon Master en la cabecera superior para que cualquier usuario pueda alternar entre ambas pantallas.
-                      </div>
-                    </div>
-                  </label>
-                </div>
+                <input
+                  type="password"
+                  value={dmPassword}
+                  onChange={(e) => setDmPassword(e.target.value)}
+                  placeholder="Opcional: protege el acceso a World Sheets"
+                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-stone-100 text-xs font-mono"
+                />
               </div>
             </div>
           )}
 
-          {/* TAB 4: CHANGELOG / UPDATES BLOG */}
+          {/* ========================================================= */}
+          {/* 6. CHANGELOG BLOG TAB                                     */}
+          {/* ========================================================= */}
           {activeTab === 'changelog' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              {/* Form to add a new version */}
-              <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <h4 className="font-cinzel font-bold text-xs text-amber-300 mb-3 flex items-center gap-1.5">
-                  <Plus className="w-4 h-4 text-amber-400" />
-                  Publicar Nueva Entrada en el Blog de Versiones
-                </h4>
-                <div className="space-y-2.5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div>
-                      <label className="block text-[11px] text-stone-400 mb-1">Número de Versión</label>
-                      <input
-                        type="text"
-                        value={newVersionInput}
-                        onChange={(e) => setNewVersionInput(e.target.value)}
-                        placeholder="Ej. 0.2 o 1.0"
-                        className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100 font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] text-stone-400 mb-1">Título de la Actualización</label>
-                      <input
-                        type="text"
-                        value={newVersionTitle}
-                        onChange={(e) => setNewVersionTitle(e.target.value)}
-                        placeholder="Ej. Nuevos Monstruos & Reglas"
-                        className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] text-stone-400 mb-1">
-                      Novedades y Cambios (un cambio por línea)
-                    </label>
-                    <textarea
-                      value={newVersionChanges}
-                      onChange={(e) => setNewVersionChanges(e.target.value)}
-                      rows={3}
-                      placeholder="• Añadido soporte para dragones ancianos&#10;• Corrección en tiradas con ventaja&#10;• Nuevo compendio de pócimas"
-                      className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-xs text-stone-100 leading-relaxed font-sans"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleAddChangelogEntry}
-                    disabled={!newVersionInput.trim() || !newVersionTitle.trim()}
-                    className="w-full py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white font-cinzel font-bold text-xs shadow transition flex items-center justify-center gap-1.5"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Agregar al Historial de Versiones</span>
-                  </button>
+            <div className="space-y-4">
+              <form onSubmit={handleAddChangelogEntry} className="bg-[#121316] border border-stone-800 rounded-xl p-4 space-y-3">
+                <h4 className="font-cinzel font-bold text-xs text-amber-300">Añadir Entrada al Blog de Versiones</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={newVersionInput}
+                    onChange={(e) => setNewVersionInput(e.target.value)}
+                    placeholder="Versión (ej. 0.2)"
+                    className="bg-[#181920] border border-stone-700 rounded px-3 py-1.5 text-xs text-stone-100 font-mono"
+                  />
+                  <input
+                    type="text"
+                    value={newVersionTitle}
+                    onChange={(e) => setNewVersionTitle(e.target.value)}
+                    placeholder="Título de la actualización"
+                    className="bg-[#181920] border border-stone-700 rounded px-3 py-1.5 text-xs text-stone-100"
+                  />
                 </div>
-              </div>
+                <textarea
+                  value={newVersionChanges}
+                  onChange={(e) => setNewVersionChanges(e.target.value)}
+                  placeholder="Escribe cada cambio en una nueva línea..."
+                  rows={3}
+                  className="w-full bg-[#181920] border border-stone-700 rounded px-3 py-1.5 text-xs text-stone-100"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-cinzel font-bold text-xs"
+                >
+                  Publicar Novedad
+                </button>
+              </form>
 
-              {/* Current Changelog List */}
-              <div className="space-y-2.5">
-                <label className="block text-xs font-cinzel font-bold text-stone-300">
-                  Historial de Actualizaciones ({changelog.length})
-                </label>
+              <div className="space-y-2">
                 {changelog.map((entry, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-[#121316] border border-stone-800 rounded-xl p-3 flex items-start justify-between gap-3"
-                  >
+                  <div key={idx} className="bg-[#121316] border border-stone-800 rounded-xl p-3 flex items-start justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-amber-950 border border-amber-600/40 text-amber-300">
-                          v{entry.version}
-                        </span>
-                        <h5 className="font-cinzel font-bold text-xs text-stone-200">{entry.title}</h5>
-                        <span className="text-[10px] text-stone-500">({entry.date})</span>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono font-bold text-xs text-amber-400">v{entry.version}</span>
+                        <strong className="text-xs text-stone-200">{entry.title}</strong>
+                        <span className="text-[10px] text-stone-500">{entry.date}</span>
                       </div>
-                      <ul className="mt-2 space-y-1">
+                      <ul className="text-xs text-stone-400 space-y-0.5 list-disc list-inside">
                         {entry.changes.map((c, cIdx) => (
-                          <li key={cIdx} className="text-[11px] text-stone-400 flex items-center gap-1.5">
-                            <span className="w-1 h-1 rounded-full bg-amber-500" />
-                            <span>{c}</span>
-                          </li>
+                          <li key={cIdx}>{c}</li>
                         ))}
                       </ul>
                     </div>
-
                     <button
                       type="button"
                       onClick={() => handleRemoveChangelogEntry(idx)}
-                      className="p-1 text-stone-500 hover:text-red-400 rounded hover:bg-stone-800 transition"
-                      title="Eliminar esta versión"
+                      className="text-stone-500 hover:text-red-400 p-1"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -549,41 +788,35 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
             </div>
           )}
 
-          {/* TAB 5: GLOBAL NOTICE */}
+          {/* ========================================================= */}
+          {/* 7. NOTICE TAB                                             */}
+          {/* ========================================================= */}
           {activeTab === 'notice' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div className="bg-[#121316] border border-stone-800 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-cinzel font-bold text-rose-400 flex items-center gap-1.5">
-                    <Bell className="w-4 h-4 text-rose-400" />
-                    Anuncio Público Emergente
-                  </label>
-                  <label className="flex items-center gap-1.5 text-xs text-stone-300 cursor-pointer">
+            <div className="space-y-4">
+              <div className="bg-[#121316] border border-stone-800 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-cinzel font-bold text-blue-400">Anuncio Público en Pantalla</label>
+                  <label className="flex items-center gap-2 text-xs text-stone-300">
                     <input
                       type="checkbox"
                       checked={devNoticeEnabled}
                       onChange={(e) => setDevNoticeEnabled(e.target.checked)}
-                      className="rounded border-stone-700 text-rose-600 focus:ring-0"
+                      className="rounded border-stone-700 text-amber-600"
                     />
-                    <span>Mostrar al cargar la app</span>
+                    <span>Activar aviso</span>
                   </label>
                 </div>
-                <p className="text-[11px] text-stone-400 mb-2">
-                  Este mensaje se mostrará a todos los usuarios cuando ingresen por primera vez a la sesión.
-                </p>
                 <input
                   type="text"
                   value={devNoticeTitle}
                   onChange={(e) => setDevNoticeTitle(e.target.value)}
-                  placeholder="Título del anuncio..."
-                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-1.5 text-xs text-stone-100 mb-2"
+                  className="w-full bg-[#181920] border border-stone-700 rounded px-3 py-1.5 text-xs text-stone-100"
                 />
                 <textarea
                   value={devNoticeContent}
                   onChange={(e) => setDevNoticeContent(e.target.value)}
                   rows={3}
-                  placeholder="Escribe el mensaje o novedades..."
-                  className="w-full bg-[#181920] border border-stone-700 rounded-lg px-3 py-2 text-xs text-stone-100 leading-relaxed font-sans"
+                  className="w-full bg-[#181920] border border-stone-700 rounded px-3 py-1.5 text-xs text-stone-100"
                 />
               </div>
             </div>
@@ -592,29 +825,25 @@ export const HostSettingsModal: React.FC<HostSettingsModalProps> = ({
 
         {/* Footer Actions */}
         <div className="pt-4 border-t border-stone-800 mt-4 flex items-center justify-between">
-          <div className="text-xs text-stone-500">
-            {savedSuccess && (
-              <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                <CheckCircle className="w-4 h-4" /> ¡Ajustes guardados con éxito!
-              </span>
-            )}
-          </div>
+          <span className="text-xs text-stone-500 font-mono">
+            {savedSuccess ? '✅ Guardado con éxito' : 'Ajustes persistentes en servidor'}
+          </span>
 
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-400 hover:text-stone-200 hover:bg-stone-800 transition"
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-400 hover:text-stone-200 hover:bg-stone-800"
             >
-              Cancelar
+              Cerrar
             </button>
             <button
               type="button"
               onClick={() => handleSave()}
-              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-1.5"
+              className="px-6 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-cinzel font-bold text-xs shadow-lg transition flex items-center gap-1.5"
             >
               <Save className="w-4 h-4" />
-              <span>Guardar Todos los Ajustes</span>
+              <span>Guardar Cambios</span>
             </button>
           </div>
         </div>

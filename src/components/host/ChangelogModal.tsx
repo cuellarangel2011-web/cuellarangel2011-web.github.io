@@ -38,7 +38,7 @@ export const ChangelogModal: React.FC<ChangelogModalProps> = ({
                 Novedades y Registro de Versiones
               </h3>
               <p className="text-[11px] text-stone-400">
-                Historial de actualizaciones oficiales de Grimorio 5E (Versión Actual: {currentVersion})
+                Historial de actualizaciones oficiales de WeRoll (Versión Actual: {currentVersion})
               </p>
             </div>
           </div>

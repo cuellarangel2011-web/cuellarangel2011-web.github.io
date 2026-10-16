@@ -1,0 +1,6 @@
+{
+  "summary": "Plan maestro unificado para WeRoll 5E: Integración completa de autenticación con preaprobación de usuarios por administrador, Hub visual de selección de World Sheets y Player Sheets, salas protegidas con contraseña creada por el DM, base de datos en servidor Express con 2 copias rotativas y panel de descargas, presencia multi-estado (Activo/Pausa/Pensando/AFK), y asistente IA relacional con pestaña de borrador y vínculos.",
+  "updatedAt": "2026-10-16T11:02:06.004078017Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

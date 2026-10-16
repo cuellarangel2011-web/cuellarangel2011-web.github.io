@@ -20,6 +20,9 @@ import {
   Edit2,
   Lock,
   Unlock,
+  Upload,
+  ArrowLeft,
+  Cloud,
 } from 'lucide-react';
 import {
   Character5e,
@@ -46,6 +49,10 @@ interface CharacterSheetViewProps {
   onTriggerRoll: (title: string, modifier: number, diceType?: number) => void;
   isLocked?: boolean;
   onUnlockRequest?: () => void;
+  onSaveToCloud?: () => void;
+  onReturnToLobby?: () => void;
+  isInActiveRoom?: boolean;
+  roomCode?: string;
 }
 
 export const CharacterSheetView: React.FC<CharacterSheetViewProps> = ({
@@ -54,6 +61,10 @@ export const CharacterSheetView: React.FC<CharacterSheetViewProps> = ({
   onTriggerRoll,
   isLocked = false,
   onUnlockRequest,
+  onSaveToCloud,
+  onReturnToLobby,
+  isInActiveRoom = false,
+  roomCode,
 }) => {
   const [activeTab, setActiveTab] = useState<'combat' | 'skills' | 'spells' | 'inventory' | 'features'>('combat');
   const [hpChangeAmount, setHpChangeAmount] = useState<number>(1);
@@ -227,6 +238,43 @@ export const CharacterSheetView: React.FC<CharacterSheetViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Lobby Navigation & Cloud Save Bar */}
+      {(onReturnToLobby || onSaveToCloud) && (
+        <div className="bg-[#14151b] border border-amber-900/50 rounded-2xl p-3 px-4 shadow-lg flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            {onReturnToLobby && (
+              <button
+                onClick={onReturnToLobby}
+                className="px-3.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-200 font-cinzel font-bold text-xs transition flex items-center gap-2 border border-stone-700 shadow-sm"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Regresar al Lobby</span>
+              </button>
+            )}
+            {isInActiveRoom && roomCode ? (
+              <span className="px-3 py-1 rounded-xl bg-[#181922] border border-stone-800 text-xs font-mono text-amber-300 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Mesa: <strong>{roomCode}</strong>
+              </span>
+            ) : (
+              <span className="px-3 py-1 rounded-xl bg-stone-900 border border-stone-800 text-xs text-stone-400 font-cinzel">
+                Modo Edición en Solitario
+              </span>
+            )}
+          </div>
+
+          {onSaveToCloud && (
+            <button
+              onClick={onSaveToCloud}
+              className="px-4 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-cinzel font-bold text-xs shadow-md transition flex items-center gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Guardar en la Nube
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 1. Header Banner: Character Identity & Lock Status */}
       <div className="bg-[#1b1c23] border border-amber-900/40 rounded-2xl p-5 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-96 h-96 bg-amber-600/5 rounded-full blur-3xl pointer-events-none" />
