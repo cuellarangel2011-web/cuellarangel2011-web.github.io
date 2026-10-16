@@ -402,7 +402,7 @@ export interface SharedSessionData {
   liveCombatants?: LiveCombatantMini[];
 }
 
-export type UserRole = 'player' | 'dm' | 'both' | 'moderator';
+export type UserRole = 'player' | 'dm' | 'both' | 'moderator' | 'admin';
 
 export interface PlayerSheetRecord {
   id: string;
@@ -443,6 +443,33 @@ export interface ChangelogEntry {
   changes: string[];
 }
 
+export interface AutoBackupLog {
+  id: string;
+  timestamp: number;
+  destination: 'github' | 'drive' | 'webhook';
+  status: 'success' | 'error';
+  message: string;
+  sizeKb?: number;
+}
+
+export interface AutoBackupConfig {
+  enabled: boolean;
+  frequencyHours: 12 | 24;
+  destination: 'github' | 'drive' | 'webhook';
+  githubToken?: string;
+  githubRepo?: string;
+  githubPath?: string;
+  driveFolderId?: string;
+  driveAccessToken?: string;
+  driveAccountEmail?: string;
+  driveAccountName?: string;
+  webhookUrl?: string;
+  lastBackupAt?: number;
+  lastBackupStatus?: 'success' | 'error' | 'idle';
+  lastBackupMessage?: string;
+  history?: AutoBackupLog[];
+}
+
 export interface HostSettings {
   apiKeyOverride?: string;
   aiModel?: string; // 'gemini-flash-lite-latest' | 'gemini-flash-latest' | custom string
@@ -456,6 +483,7 @@ export interface HostSettings {
   logoType?: 'icon' | 'custom';
   customLogoUrl?: string; // Base64 data URL or image path for uploaded custom logo
   rejectionCustomMessage?: string;
+  autoBackup?: AutoBackupConfig;
   developerNotice?: {
     enabled: boolean;
     title: string;

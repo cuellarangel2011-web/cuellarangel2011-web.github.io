@@ -1,4 +1,4 @@
-import { Character5e, DMWorkspace, HostSettings } from '../types/dnd';
+import { Character5e, DMWorkspace, HostSettings, UserRole } from '../types/dnd';
 import { SAMPLE_CHARACTER, SAMPLE_DM_WORKSPACE } from '../data/srd';
 
 const STORAGE_KEYS = {
@@ -65,7 +65,7 @@ export interface AuthSessionUser {
   id: string;
   email: string;
   displayName: string;
-  role: 'player' | 'dm' | 'both' | 'moderator';
+  role: UserRole;
   status: 'pending' | 'approved' | 'rejected';
 }
 
@@ -111,11 +111,11 @@ export function saveActiveWorldId(id: string | null): void {
   } catch {}
 }
 
-export function loadUserRole(): 'player' | 'dm' | 'both' | 'moderator' | null {
+export function loadUserRole(): UserRole | null {
   if (typeof window === 'undefined') return null;
   try {
-    const role = localStorage.getItem(STORAGE_KEYS.USER_ROLE);
-    if (role === 'player' || role === 'dm' || role === 'both' || role === 'moderator') {
+    const role = localStorage.getItem(STORAGE_KEYS.USER_ROLE) as UserRole | null;
+    if (role === 'player' || role === 'dm' || role === 'both' || role === 'moderator' || role === 'admin') {
       return role;
     }
     return null;
@@ -124,7 +124,7 @@ export function loadUserRole(): 'player' | 'dm' | 'both' | 'moderator' | null {
   }
 }
 
-export function saveUserRole(role: 'player' | 'dm' | 'both' | 'moderator' | null): void {
+export function saveUserRole(role: UserRole | null): void {
   if (typeof window === 'undefined') return;
   try {
     if (role) {

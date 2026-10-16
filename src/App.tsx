@@ -1091,7 +1091,7 @@ export default function App() {
       </main>
 
       {/* Persistent AI Assistant Reference & Total Backup Banner (Admin/Moderator Only) */}
-      {(authUser?.role === 'moderator' || userRole === 'moderator') && (
+      {(authUser?.role === 'moderator' || authUser?.role === 'admin' || userRole === 'moderator' || userRole === 'admin') && (
         <footer className="max-w-7xl mx-auto px-4 pb-8 w-full">
           <div className="bg-[#121316] border border-stone-800/90 rounded-2xl p-4 shadow-xl text-stone-300">
             <div className="flex flex-col md:flex-row items-center justify-between gap-4">
