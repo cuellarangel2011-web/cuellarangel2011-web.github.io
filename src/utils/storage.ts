@@ -10,6 +10,8 @@ const STORAGE_KEYS = {
   UNLOCKED_CHARS: 'dnd_5e_unlocked_chars_session',
   DM_UNLOCKED: 'dnd_5e_dm_unlocked_session',
   USER_ROLE: 'dnd_5e_user_role_v1',
+  AUTH_USER: 'dnd_5e_auth_user_v2',
+  ACTIVE_WORLD_ID: 'dnd_5e_active_world_id_v2',
 };
 
 export const DEFAULT_HOST_SETTINGS: HostSettings = {
@@ -17,13 +19,13 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
   aiModel: 'gemini-2.5-flash',
   dmPassword: '',
   moderatorPassword: 'admin',
-  headerTitle: 'GRIMORIO 5E',
+  headerTitle: 'WeRoll',
   headerSubtitle: 'Companion & DM Suite v0.1',
   headerLogoIcon: 'shield',
   developerNotice: {
     enabled: true,
-    title: 'Grimorio 5E • Actualizaciones v0.1',
-    content: 'Bienvenido a Grimorio 5E v0.1. Se ha implementado el sistema de roles protegidos (Jugador, DM, Moderador), carpetas jerárquicas hasta 3 niveles, objetos y conjuros para el DM con compendio genérico, mensaje en vivo del DM en la mesa y reinicio de combates.',
+    title: 'WeRoll • Actualizaciones v0.1',
+    content: 'Bienvenido a WeRoll v0.1. Se ha implementado el sistema de roles protegidos (Jugador, DM, Moderador), carpetas jerárquicas hasta 3 niveles, objetos y conjuros para el DM con compendio genérico, mensaje en vivo del DM en la mesa y reinicio de combates.',
     version: '0.1',
   },
   oracleWelcomeMessage: 'Saludos, viajero. Soy el Sabio Arcano, tu árbitro y custodio de las reglas de 5E. ¿Qué duda deseas resolver hoy?',
@@ -46,12 +48,6 @@ export const DEFAULT_HOST_SETTINGS: HostSettings = {
   roleSwitchingAllowed: 'strict',
 };
 
-/**
- * Checks if an entity's folder matches a selected filter folder.
- * If target is 'all', matches everything.
- * If target is a parent folder (e.g. 'Ciudad Olvidada'), matches exact folder
- * AND all subfolders/sub-subfolders (e.g. 'Ciudad Olvidada / Taberna del Jabalí').
- */
 export function folderMatchesFilter(entityFolder: string | undefined, selectedFolder: string): boolean {
   if (selectedFolder === 'all') return true;
   const folder = entityFolder?.trim() || 'General';
@@ -60,23 +56,66 @@ export function folderMatchesFilter(entityFolder: string | undefined, selectedFo
   return false;
 }
 
-/**
- * Calculates folder depth:
- * 'Ciudad Olvidada' -> depth 1 (Root)
- * 'Ciudad Olvidada / Taberna' -> depth 2 (Subfolder)
- * 'Ciudad Olvidada / Taberna / Sótano' -> depth 3 (Sub-subfolder)
- */
 export function getFolderDepth(folder: string): number {
   if (!folder) return 1;
   return folder.split(' / ').length;
 }
 
+export interface AuthSessionUser {
+  id: string;
+  email: string;
+  displayName: string;
+  role: 'player' | 'dm' | 'both' | 'moderator';
+  status: 'pending' | 'approved' | 'rejected';
+}
 
-export function loadUserRole(): 'player' | 'dm' | 'moderator' | null {
+export function loadAuthUser(): AuthSessionUser | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.AUTH_USER);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function saveAuthUser(user: AuthSessionUser | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (user) {
+      localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
+    }
+  } catch {}
+}
+
+export function loadActiveWorldId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_WORLD_ID);
+  } catch {
+    return null;
+  }
+}
+
+export function saveActiveWorldId(id: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (id) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_WORLD_ID, id);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_WORLD_ID);
+    }
+  } catch {}
+}
+
+export function loadUserRole(): 'player' | 'dm' | 'both' | 'moderator' | null {
   if (typeof window === 'undefined') return null;
   try {
     const role = localStorage.getItem(STORAGE_KEYS.USER_ROLE);
-    if (role === 'player' || role === 'dm' || role === 'moderator') {
+    if (role === 'player' || role === 'dm' || role === 'both' || role === 'moderator') {
       return role;
     }
     return null;
@@ -85,7 +124,7 @@ export function loadUserRole(): 'player' | 'dm' | 'moderator' | null {
   }
 }
 
-export function saveUserRole(role: 'player' | 'dm' | 'moderator' | null): void {
+export function saveUserRole(role: 'player' | 'dm' | 'both' | 'moderator' | null): void {
   if (typeof window === 'undefined') return;
   try {
     if (role) {

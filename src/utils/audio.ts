@@ -59,8 +59,12 @@ class SoundEffectsManager {
   }
 
   // Alias for rolling dice
-  public playDiceRoll() {
-    this.playDiceTumble();
+  public playDiceRoll(isCritical?: boolean) {
+    if (isCritical) {
+      this.playCriticalHit();
+    } else {
+      this.playDiceTumble();
+    }
   }
 
   // Chime alert for combat turn notification

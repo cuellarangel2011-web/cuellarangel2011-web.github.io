@@ -331,6 +331,8 @@ export interface DiceRollResult {
   timestamp: number;
 }
 
+export type PresenceStatus = 'active' | 'idle' | 'thinking' | 'afk' | 'offline';
+
 export interface PartyMemberLive {
   characterId: string;
   characterName: string;
@@ -342,6 +344,8 @@ export interface PartyMemberLive {
   level: number;
   characterClass: string;
   lastPing: number;
+  presenceStatus?: PresenceStatus;
+  idleSeconds?: number;
   lastRoll?: DiceRollResult;
 }
 
@@ -350,6 +354,8 @@ export interface SharedSessionData {
   partyMembers: PartyMemberLive[];
   dmConnected?: boolean;
   dmLiveMessage?: string;
+  dmPresenceStatus?: PresenceStatus;
+  dmIdleSeconds?: number;
   dmLastRoll?: DiceRollResult;
   rollFeed: DiceRollResult[];
   dmAnnouncements: {
@@ -362,7 +368,31 @@ export interface SharedSessionData {
   quickNotification?: string;
 }
 
-export type UserRole = 'player' | 'dm' | 'moderator';
+export type UserRole = 'player' | 'dm' | 'both' | 'moderator';
+
+export interface UserAccountPublic {
+  id: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  status: 'pending' | 'approved' | 'rejected';
+  registeredAt: number;
+  approvedAt?: number;
+  approvedBy?: string;
+  lastActiveAt: number;
+}
+
+export interface WorldSheetSummary {
+  id: string;
+  ownerEmail?: string;
+  name: string;
+  roomName?: string;
+  description?: string;
+  roomCode: string;
+  roomPassword?: string;
+  lastPlayed: number;
+  workspace: DMWorkspace;
+}
 
 export interface ChangelogEntry {
   version: string;

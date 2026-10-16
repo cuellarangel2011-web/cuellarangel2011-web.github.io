@@ -9,22 +9,39 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+async function startServer() {
+  const app = express();
+  const PORT = Number(process.env.PORT) || 3000;
+  const isProd = process.env.NODE_ENV === 'production';
 
-app.use(express.json());
+  app.use(express.json());
 
-// API endpoints
-app.use('/api', apiRouter);
+  // API endpoints
+  app.use('/api', apiRouter);
 
-// Serve static build assets if available
-const distPath = path.join(__dirname, 'dist');
-app.use(express.static(distPath));
+  if (!isProd) {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    // Serve static build assets in production
+    const distPath = path.join(__dirname, 'dist');
+    app.use(express.static(distPath));
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
-});
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`D&D 5E Companion Server running on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`D&D 5E Companion Server running on http://0.0.0.0:${PORT} [${isProd ? 'production' : 'development'}]`);
+  });
+}
+
+startServer().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });

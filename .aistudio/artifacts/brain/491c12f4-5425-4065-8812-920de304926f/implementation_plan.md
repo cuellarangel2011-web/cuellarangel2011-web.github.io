@@ -1,6 +1,6 @@
 # Sistema de Autenticación, Aprobación de Usuarios, Seguridad de Mesas y Copias Rotativas
 
-Plan de arquitectura e implementación para dotar a Grimorio 5E de un sistema robusto de cuentas con preaprobación por Administrador, seguridad individual de hojas de personaje y espacio del DM, mesas protegidas por clave creada por el DM, detección de inactividad multinivel (4 estados de presencia) y copias de seguridad automáticas rotativas de 2 versiones por jugador guardadas en el servidor.
+Plan de arquitectura e implementación para dotar a WeRoll de un sistema robusto de cuentas con preaprobación por Administrador, seguridad individual de hojas de personaje y espacio del DM, mesas protegidas por clave creada por el DM, detección de inactividad multinivel (4 estados de presencia) y copias de seguridad automáticas rotativas de 2 versiones por jugador guardadas en el servidor.
 
 ---
 
@@ -28,7 +28,7 @@ Plan de arquitectura e implementación para dotar a Grimorio 5E de un sistema ro
 ## 1. Visión General y Experiencia de Usuario
 
 ### 1.1 Propósito
-Convertir Grimorio 5E en un entorno multiusuario seguro y confiable para campañas presenciales o a distancia, donde el Administrador mantiene el control de acceso, los Dungeon Masters administran sus mesas con clave privada, los Jugadores son dueños absolutos de sus fichas sin riesgo de sobreescritura accidental por terceros, y la mesa entera conoce el estado de atención de sus integrantes en tiempo real.
+Convertir WeRoll en un entorno multiusuario seguro y confiable para campañas presenciales o a distancia, donde el Administrador mantiene el control de acceso, los Dungeon Masters administran sus mesas con clave privada, los Jugadores son dueños absolutos de sus fichas sin riesgo de sobreescritura accidental por terceros, y la mesa entera conoce el estado de atención de sus integrantes en tiempo real.
 
 ### 1.2 Flujos Principales de Usuario
 

@@ -26,6 +26,9 @@ import {
   Calendar,
   Layers,
   Check,
+  Upload,
+  ArrowLeft,
+  Save,
 } from 'lucide-react';
 import {
   DMWorkspace,
@@ -54,6 +57,10 @@ interface DMScreenViewProps {
   onOpenAIOracle: (initialPrompt?: string, isDmContext?: boolean) => void;
   onUpdateDmLiveMessage?: (msg: string) => void;
   onGiveItemToPlayer?: (item: InventoryItem) => void;
+  onSaveAndReturnToLobby?: () => void;
+  onSaveToCloud?: () => void;
+  worldName?: string;
+  roomCode?: string;
 }
 
 export const DMScreenView: React.FC<DMScreenViewProps> = ({
@@ -64,6 +71,10 @@ export const DMScreenView: React.FC<DMScreenViewProps> = ({
   onOpenAIOracle,
   onUpdateDmLiveMessage,
   onGiveItemToPlayer,
+  onSaveAndReturnToLobby,
+  onSaveToCloud,
+  worldName,
+  roomCode,
 }) => {
   const [activeTab, setActiveTab] = useState<
     'initiative' | 'combatSummaries' | 'npcs' | 'monsters' | 'itemsAndSpells' | 'locations' | 'chronicles'
@@ -667,6 +678,47 @@ export const DMScreenView: React.FC<DMScreenViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Lobby Navigation, World Sheet Badge & Cloud Save Bar */}
+      {(onSaveAndReturnToLobby || onSaveToCloud) && (
+        <div className="bg-[#14151b] border border-purple-900/60 rounded-2xl p-3 px-4 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {onSaveAndReturnToLobby && (
+              <button
+                onClick={onSaveAndReturnToLobby}
+                className="px-4 py-2 rounded-xl bg-red-950/70 hover:bg-red-900 border border-red-700/80 text-red-200 font-cinzel font-bold text-xs transition flex items-center gap-2 shadow"
+                title="Guarda la partida y cierra la mesa. La mesa deja de existir hasta que vuelvas a abrirla."
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Guardar Partida y Regresar al Lobby</span>
+              </button>
+            )}
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-3 py-1 rounded-xl bg-purple-950/80 border border-purple-800 text-xs font-cinzel text-purple-200">
+                World Sheet: <strong className="text-white">{worldName || 'Campaña Activa'}</strong>
+              </span>
+              {roomCode && (
+                <span className="px-3 py-1 rounded-xl bg-[#181922] border border-stone-800 text-xs font-mono text-amber-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Mesa: <strong>{roomCode}</strong>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {onSaveToCloud && (
+            <button
+              onClick={onSaveToCloud}
+              className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-cinzel font-bold text-xs shadow-md transition flex items-center gap-1.5"
+              title="Guardar estado del World Sheet en la nube sin salir"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Guardar en la Nube
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 1. DM Header with Folder Navigator & Live Message */}
       <div className="bg-[#191a21] border border-amber-900/50 rounded-2xl p-5 shadow-xl relative overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

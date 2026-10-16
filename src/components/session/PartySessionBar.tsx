@@ -16,7 +16,7 @@ import {
   Dices,
   Sparkles,
 } from 'lucide-react';
-import { DiceRollResult, PartyMemberLive } from '../../types/dnd';
+import { DiceRollResult, PartyMemberLive, PresenceStatus } from '../../types/dnd';
 
 interface PartySessionBarProps {
   roomCode: string;
@@ -33,6 +33,8 @@ interface PartySessionBarProps {
   isDmMode: boolean;
   dmConnected?: boolean;
   dmLiveMessage?: string;
+  dmPresenceStatus?: PresenceStatus;
+  dmIdleSeconds?: number;
   onUpdateDmLiveMessage?: (msg: string) => void;
 }
 
@@ -50,6 +52,8 @@ export const PartySessionBar: React.FC<PartySessionBarProps> = ({
   isDmMode,
   dmConnected = false,
   dmLiveMessage = '',
+  dmPresenceStatus = 'active',
+  dmIdleSeconds = 0,
   onUpdateDmLiveMessage,
 }) => {
   const [showRoomModal, setShowRoomModal] = useState<boolean>(false);
@@ -86,6 +90,40 @@ export const PartySessionBar: React.FC<PartySessionBarProps> = ({
       roll: member.lastRoll,
     });
   });
+
+  const renderPresenceBadge = (status?: string, idleSec: number = 0) => {
+    if (status === 'afk' || idleSec > 600) {
+      const mins = Math.max(1, Math.floor(idleSec / 60));
+      return (
+        <span className="flex items-center gap-1 text-[9px] text-stone-400 font-mono">
+          <span className="w-1.5 h-1.5 rounded-full bg-stone-500" />
+          Ausente ({mins}m)
+        </span>
+      );
+    }
+    if (status === 'thinking' || idleSec > 180) {
+      return (
+        <span className="flex items-center gap-1 text-[9px] text-blue-400 font-mono">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+          Pensando...
+        </span>
+      );
+    }
+    if (status === 'idle' || idleSec > 60) {
+      return (
+        <span className="flex items-center gap-1 text-[9px] text-amber-400 font-mono">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          En Pausa
+        </span>
+      );
+    }
+    return (
+      <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-mono">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+        En Línea
+      </span>
+    );
+  };
 
   return (
     <div className="space-y-3">
@@ -254,10 +292,9 @@ export const PartySessionBar: React.FC<PartySessionBarProps> = ({
                       Dungeon Master
                     </span>
                   </div>
-                  <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-600/50 text-emerald-300">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    En Vivo
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {renderPresenceBadge(dmPresenceStatus, dmIdleSeconds)}
+                  </div>
                 </div>
 
                 <div className="text-[10px] text-purple-400 font-semibold mb-1">
@@ -332,14 +369,17 @@ export const PartySessionBar: React.FC<PartySessionBarProps> = ({
             >
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-cinzel font-bold text-stone-200 text-xs truncate max-w-[140px]">
+                  <span className="font-cinzel font-bold text-stone-200 text-xs truncate max-w-[130px]" title={member.characterName}>
                     {member.characterName}
                   </span>
-                  <span className="text-[10px] text-amber-400 font-mono">
+                  {renderPresenceBadge(member.presenceStatus, member.idleSeconds)}
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-stone-400 mb-2">
+                  <span className="truncate max-w-[110px]" title={member.playerName}>Jugador: {member.playerName}</span>
+                  <span className="text-amber-400/90 font-mono text-[10px]">
                     Niv {member.level} {member.characterClass}
                   </span>
                 </div>
-                <div className="text-[10px] text-stone-500 mb-2 truncate">Jugador: {member.playerName}</div>
 
                 {/* HP Bar */}
                 <div className="space-y-1">
